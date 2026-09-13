@@ -3,6 +3,7 @@ import UIKit
 struct TrackSection {
     var title: String?
     var tracks: [Track]
+    var source: QueueSource? = nil
 }
 
 class TrackListViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
@@ -14,6 +15,10 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
         didSet {
             tableView.reloadData()
             updateEmptyState()
+            if let pending = pendingReveal, !tracks.isEmpty {
+                pendingReveal = nil
+                reveal(pending)
+            }
         }
     }
 
@@ -22,10 +27,14 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
         set { sections = [TrackSection(title: nil, tracks: newValue)] }
     }
 
-    var onSelectTrack: ((Track, [Track]) -> Void)?
+    var queueSource: QueueSource?
+    var onSelectTrack: ((Track, [Track], QueueSource?) -> Void)?
+    var onPlayNext: ((Track) -> Void)?
+    var onAddToQueue: ((Track) -> Void)?
     var currentTrack: (() -> Track?)?
     var isCached: ((Track) -> Bool)?
     var onToggleCache: ((Track) -> Void)?
+    private var pendingReveal: Track?
     private var observers: [NSObjectProtocol] = []
 
     override func viewDidLoad() {
@@ -102,6 +111,26 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
         present(alert, animated: true)
     }
 
+    func reveal(_ track: Track) {
+        guard isViewLoaded, !tracks.isEmpty else {
+            pendingReveal = track
+            return
+        }
+        for (sectionIndex, section) in sections.enumerated() {
+            if let row = section.tracks.firstIndex(where: { $0.isSame(as: track) }) {
+                let indexPath = IndexPath(row: row, section: sectionIndex)
+                tableView.layoutIfNeeded()
+                tableView.scrollToRow(at: indexPath, at: .middle, animated: true)
+                tableView.selectRow(at: indexPath, animated: true, scrollPosition: .none)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    self?.tableView.deselectRow(at: indexPath, animated: true)
+                }
+                return
+            }
+        }
+        showNotice("Track is not in this list anymore")
+    }
+
     func showNotice(_ message: String) {
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         present(alert, animated: true)
@@ -132,22 +161,28 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let section = sections[indexPath.section]
-        onSelectTrack?(section.tracks[indexPath.row], section.tracks)
+        onSelectTrack?(section.tracks[indexPath.row], section.tracks, section.source ?? queueSource)
     }
 
     func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
-        guard let onToggleCache else { return nil }
         let track = sections[indexPath.section].tracks[indexPath.row]
         let cached = isCached?(track) ?? false
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-            let action = UIAction(
-                title: cached ? "Remove from saved" : "Save offline",
-                image: UIImage(systemName: cached ? "trash" : "arrow.down.circle"),
-                attributes: cached ? [.destructive] : []
-            ) { _ in
-                onToggleCache(track)
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            var actions: [UIAction] = []
+            if let onPlayNext = self?.onPlayNext {
+                actions.append(UIAction(title: "Play next", image: UIImage(systemName: "text.insert")) { _ in onPlayNext(track) })
             }
-            return UIMenu(children: [action])
+            if let onAddToQueue = self?.onAddToQueue {
+                actions.append(UIAction(title: "Add to queue", image: UIImage(systemName: "text.append")) { _ in onAddToQueue(track) })
+            }
+            if let onToggleCache = self?.onToggleCache {
+                actions.append(UIAction(
+                    title: cached ? "Remove from saved" : "Save offline",
+                    image: UIImage(systemName: cached ? "trash" : "arrow.down.circle"),
+                    attributes: cached ? [.destructive] : []
+                ) { _ in onToggleCache(track) })
+            }
+            return actions.isEmpty ? nil : UIMenu(children: actions)
         }
     }
 

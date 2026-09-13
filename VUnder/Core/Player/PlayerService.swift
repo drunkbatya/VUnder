@@ -9,6 +9,7 @@ final class PlayerService {
 
     private(set) var queue: [Track] = []
     private(set) var currentIndex: Int?
+    private(set) var source: QueueSource?
     private var order: [Int] = []
     private(set) var state: PlaybackState = .idle
     private(set) var progress: PlaybackProgress = .zero
@@ -56,11 +57,73 @@ final class PlayerService {
         settings.repeatMode
     }
 
-    func play(_ track: Track, in tracks: [Track]) {
+    func play(_ track: Track, in tracks: [Track], source: QueueSource?) {
         queue = tracks
+        self.source = source
         currentIndex = tracks.firstIndex(of: track) ?? 0
         rebuildOrder()
         startCurrent()
+    }
+
+    var orderedQueue: [Track] {
+        order.map { queue[$0] }
+    }
+
+    var currentOrderPosition: Int? {
+        orderPosition
+    }
+
+    func playQueueItem(at position: Int) {
+        guard order.indices.contains(position) else { return }
+        currentIndex = order[position]
+        startCurrent()
+    }
+
+    func moveQueueItem(from: Int, to: Int) {
+        guard order.indices.contains(from), order.indices.contains(to), from != to else { return }
+        let index = order.remove(at: from)
+        order.insert(index, at: to)
+        Log.player.info("queue move \(from, privacy: .public) -> \(to, privacy: .public)")
+        NotificationCenter.default.post(name: PlayerService.stateDidChange, object: self)
+    }
+
+    func removeQueueItem(at position: Int) {
+        guard order.indices.contains(position), order[position] != currentIndex else { return }
+        let removedIndex = order.remove(at: position)
+        queue.remove(at: removedIndex)
+        order = order.map { $0 > removedIndex ? $0 - 1 : $0 }
+        if let index = currentIndex, index > removedIndex {
+            currentIndex = index - 1
+        }
+        Log.player.info("queue remove at \(position, privacy: .public), left \(self.queue.count, privacy: .public)")
+        NotificationCenter.default.post(name: PlayerService.stateDidChange, object: self)
+    }
+
+    func playNext(_ track: Track) {
+        insertIntoQueue(track, afterCurrent: true)
+    }
+
+    func addToQueue(_ track: Track) {
+        insertIntoQueue(track, afterCurrent: false)
+    }
+
+    private func insertIntoQueue(_ track: Track, afterCurrent: Bool) {
+        guard let position = orderPosition else {
+            play(track, in: [track], source: nil)
+            return
+        }
+        if let existing = queue.firstIndex(where: { $0.isSame(as: track) }), let existingPosition = order.firstIndex(of: existing) {
+            guard existing != currentIndex else { return }
+            order.remove(at: existingPosition)
+            let target = afterCurrent ? (order.firstIndex(of: currentIndex ?? 0) ?? 0) + 1 : order.count
+            order.insert(existing, at: target)
+        } else {
+            queue.append(track)
+            let newIndex = queue.count - 1
+            order.insert(newIndex, at: afterCurrent ? position + 1 : order.count)
+        }
+        Log.player.info("queue \(afterCurrent ? "play next" : "add", privacy: .public) \(track.storageID, privacy: .public), size \(self.queue.count, privacy: .public)")
+        NotificationCenter.default.post(name: PlayerService.stateDidChange, object: self)
     }
 
     func toggleShuffle() {

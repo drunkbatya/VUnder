@@ -35,6 +35,11 @@ final class MusicRootViewController: UIViewController {
         show(pages[segments.selectedSegmentIndex])
     }
 
+    func select(_ index: Int) {
+        segments.selectedSegmentIndex = index
+        show(pages[index])
+    }
+
     private func show(_ controller: UIViewController) {
         guard controller !== current else { return }
         if let current {

@@ -1,6 +1,8 @@
 import UIKit
 
 final class PlayerViewController: UIViewController {
+    var onJumpToTrack: ((Track, QueueSource) -> Void)?
+
     private let player: PlayerService
     private let fileInfoProvider: TrackFileInfoProvider
     private let artworkView = UIImageView()
@@ -14,6 +16,8 @@ final class PlayerViewController: UIViewController {
     private let playButton = UIButton(type: .system)
     private let shuffleButton = UIButton(type: .system)
     private let repeatButton = UIButton(type: .system)
+    private let queueButton = UIButton(type: .system)
+    private let jumpButton = UIButton(type: .system)
     private var observers: [NSObjectProtocol] = []
     private var artworkTask: Task<Void, Never>?
     private var shownTrack: Track?
@@ -83,12 +87,16 @@ final class PlayerViewController: UIViewController {
         shuffleButton.setImage(UIImage(systemName: "shuffle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
         shuffleButton.addTarget(self, action: #selector(toggleShuffle), for: .touchUpInside)
         repeatButton.addTarget(self, action: #selector(cycleRepeat), for: .touchUpInside)
-        for button in [shuffleButton, repeatButton] {
+        queueButton.setImage(UIImage(systemName: "list.bullet", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
+        queueButton.addTarget(self, action: #selector(openQueue), for: .touchUpInside)
+        jumpButton.setImage(UIImage(systemName: "arrow.turn.up.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
+        jumpButton.addTarget(self, action: #selector(jumpToTrack), for: .touchUpInside)
+        for button in [shuffleButton, repeatButton, queueButton, jumpButton] {
             button.widthAnchor.constraint(equalToConstant: 56).isActive = true
             button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         }
-        let modes = UIStackView(arrangedSubviews: [shuffleButton, repeatButton])
-        modes.spacing = 48
+        let modes = UIStackView(arrangedSubviews: [shuffleButton, repeatButton, queueButton, jumpButton])
+        modes.spacing = 24
         let modesRow = UIView()
         modes.translatesAutoresizingMaskIntoConstraints = false
         modesRow.addSubview(modes)
@@ -144,6 +152,18 @@ final class PlayerViewController: UIViewController {
         let repeatSymbol = player.repeatMode == .one ? "repeat.1" : "repeat"
         repeatButton.setImage(UIImage(systemName: repeatSymbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
         repeatButton.tintColor = player.repeatMode == .off ? Theme.secondaryText : Theme.accent
+        queueButton.tintColor = Theme.secondaryText
+        jumpButton.tintColor = Theme.secondaryText
+        jumpButton.isEnabled = player.source != nil
+    }
+
+    @objc private func openQueue() {
+        present(UINavigationController(rootViewController: QueueViewController(player: player)), animated: true)
+    }
+
+    @objc private func jumpToTrack() {
+        guard let track = player.current, let source = player.source else { return }
+        onJumpToTrack?(track, source)
     }
 
     @objc private func toggleShuffle() {

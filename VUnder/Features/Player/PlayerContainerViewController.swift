@@ -1,6 +1,8 @@
 import UIKit
 
 final class PlayerContainerViewController: UIViewController {
+    var onJumpToTrack: ((Track, QueueSource) -> Void)?
+
     private let content: UIViewController
     private let player: PlayerService
     private let fileInfoProvider: TrackFileInfoProvider
@@ -64,6 +66,12 @@ final class PlayerContainerViewController: UIViewController {
 
     private func openPlayer() {
         guard player.current != nil else { return }
-        present(PlayerViewController(player: player, fileInfoProvider: fileInfoProvider), animated: true)
+        let controller = PlayerViewController(player: player, fileInfoProvider: fileInfoProvider)
+        controller.onJumpToTrack = { [weak self] track, source in
+            self?.dismiss(animated: true) {
+                self?.onJumpToTrack?(track, source)
+            }
+        }
+        present(controller, animated: true)
     }
 }

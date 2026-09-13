@@ -11,6 +11,9 @@ final class AppCoordinator {
     private let fileInfoProvider: TrackFileInfoProvider
     private var autoCache: AutoCacheController?
     private var loginCoordinator: LoginCoordinator?
+    private weak var musicNavigation: UINavigationController?
+    private weak var musicRoot: MusicRootViewController?
+    private weak var myMusic: MyMusicViewController?
     private var observers: [NSObjectProtocol] = []
 
     init(window: UIWindow, environment: AppEnvironment) {
@@ -103,7 +106,43 @@ final class AppCoordinator {
             guard let self, let navigation else { return }
             navigation.pushViewController(makeGeneralScreen(row, userID: session.userID, navigation: navigation), animated: true)
         }
-        window.rootViewController = PlayerContainerViewController(content: navigation, player: player, fileInfoProvider: fileInfoProvider)
+        musicNavigation = navigation
+        musicRoot = root
+        self.myMusic = myMusic
+        let container = PlayerContainerViewController(content: navigation, player: player, fileInfoProvider: fileInfoProvider)
+        container.onJumpToTrack = { [weak self] track, source in
+            self?.jump(to: track, source: source)
+        }
+        window.rootViewController = container
+    }
+
+    private func jump(to track: Track, source: QueueSource) {
+        guard let navigation = musicNavigation, let root = musicRoot, let myMusic else { return }
+        Log.app.info("jump to \(track.storageID, privacy: .public) in \(source.title, privacy: .public)")
+        navigation.presentedViewController?.dismiss(animated: false)
+        navigation.popToRootViewController(animated: false)
+        switch source {
+        case .myMusic:
+            root.select(0)
+            myMusic.revealInLibrary(track)
+        case .search(let query):
+            root.select(0)
+            myMusic.revealInSearch(query: query, track: track)
+        case .saved, .listened, .playlist:
+            root.select(1)
+            let screen: TrackListViewController
+            switch source {
+            case .playlist(let playlist):
+                screen = PlaylistTracksViewController(audioAPI: environment.audioAPI, network: environment.network, playlist: playlist)
+            case .listened:
+                screen = StoredTracksViewController(library: environment.library, source: .listened)
+            default:
+                screen = StoredTracksViewController(library: environment.library, source: .saved)
+            }
+            bindPlayer(to: screen)
+            navigation.pushViewController(screen, animated: true)
+            screen.reveal(track)
+        }
     }
 
     private func signOut() {
@@ -119,9 +158,11 @@ final class AppCoordinator {
 
     private func bindPlayer(to list: TrackListViewController) {
         list.currentTrack = { [player] in player.current }
-        list.onSelectTrack = { [player] track, queue in
-            player.play(track, in: queue)
+        list.onSelectTrack = { [player] track, queue, source in
+            player.play(track, in: queue, source: source)
         }
+        list.onPlayNext = { [player] track in player.playNext(track) }
+        list.onAddToQueue = { [player] track in player.addToQueue(track) }
         list.isCached = { [cacheState] track in cacheState.isCached(track) }
         list.onToggleCache = { [cacheState, cache = environment.cache] track in
             let cached = cacheState.isCached(track)

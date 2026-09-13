@@ -33,6 +33,7 @@ final class PlaylistTracksViewController: FilterableTrackListViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = playlist.title
+        queueSource = .playlist(playlist)
         load()
     }
 

@@ -43,6 +43,7 @@ final class StoredTracksViewController: FilterableTrackListViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = source.title
+        queueSource = source == .saved ? .saved : .listened
         if source == .saved {
             cacheObserver = NotificationCenter.default.addObserver(forName: CacheState.didChange, object: nil, queue: .main) { [weak self] _ in
                 guard let self else { return }

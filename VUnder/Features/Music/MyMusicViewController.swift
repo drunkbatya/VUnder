@@ -16,6 +16,7 @@ final class MyMusicViewController: TrackListViewController, UISearchBarDelegate 
     private var globalExhausted = false
     private var globalTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
+    private var revealAfterSearch: Track?
 
     init(audioAPI: AudioAPI, library: TrackLibrary, network: NetworkMonitor, ownerID: Int64) {
         self.audioAPI = audioAPI
@@ -104,6 +105,7 @@ final class MyMusicViewController: TrackListViewController, UISearchBarDelegate 
 
     private func rebuildSections() {
         if query.isEmpty {
+            queueSource = .myMusic
             tracks = libraryTracks
             countLabel.text = libraryTracks.isEmpty ? "" : "\(libraryTracks.count) tracks"
             return
@@ -114,8 +116,9 @@ final class MyMusicViewController: TrackListViewController, UISearchBarDelegate 
         if !local.isEmpty {
             result.append(TrackSection(title: "My music", tracks: local))
         }
+        queueSource = .myMusic
         if globalQuery == query, !globalResults.isEmpty {
-            result.append(TrackSection(title: "Search results", tracks: globalResults))
+            result.append(TrackSection(title: "Search results", tracks: globalResults, source: .search(globalQuery)))
         }
         sections = result
         countLabel.text = ""
@@ -134,6 +137,7 @@ final class MyMusicViewController: TrackListViewController, UISearchBarDelegate 
         searchBar.resignFirstResponder()
         guard !query.isEmpty else { return }
         guard network.isConnected else {
+            revealAfterSearch = nil
             showNotice("No internet connection")
             return
         }
@@ -171,6 +175,23 @@ final class MyMusicViewController: TrackListViewController, UISearchBarDelegate 
                 showError(error)
             }
             globalTask = nil
+            if let pending = revealAfterSearch {
+                revealAfterSearch = nil
+                reveal(pending)
+            }
         }
+    }
+
+    func revealInLibrary(_ track: Track) {
+        searchBar.text = ""
+        searchBar(searchBar, textDidChange: "")
+        reveal(track)
+    }
+
+    func revealInSearch(query searched: String, track: Track) {
+        searchBar.text = searched
+        searchBar(searchBar, textDidChange: searched)
+        revealAfterSearch = track
+        searchBarSearchButtonClicked(searchBar)
     }
 }
