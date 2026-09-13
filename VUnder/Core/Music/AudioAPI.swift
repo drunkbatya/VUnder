@@ -26,13 +26,13 @@ final class AudioAPI: Sendable {
         }
         do {
             return try await api.call(.audio(method, version: VKAPIRequest.audioVersion, parameters: parameters))
-        } catch VKAPIError.api(let error) where !AudioAPI.nonVersionErrorCodes.contains(error.code) {
-            Log.music.error("\(method, privacy: .public) v=\(VKAPIRequest.audioVersion, privacy: .public) failed \(error.code, privacy: .public): \(error.message, privacy: .public), retrying with v=\(VKAPIRequest.audioHLSVersion, privacy: .public)")
+        } catch VKAPIError.api(let original) where !AudioAPI.nonVersionErrorCodes.contains(original.code) {
+            Log.music.error("\(method, privacy: .public) v=\(VKAPIRequest.audioVersion, privacy: .public) failed \(original.code, privacy: .public): \(original.message, privacy: .public), retrying with v=\(VKAPIRequest.audioHLSVersion, privacy: .public)")
             let json: JSONObject
             do {
                 json = try await api.call(.audio(method, version: VKAPIRequest.audioHLSVersion, parameters: parameters))
             } catch {
-                throw VKAPIError.api(error)
+                throw VKAPIError.api(original)
             }
             settings.preferHLS = true
             Log.music.fault("audio api v=\(VKAPIRequest.audioVersion, privacy: .public) is broken, switched to HLS version permanently")

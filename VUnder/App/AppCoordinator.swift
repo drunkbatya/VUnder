@@ -9,6 +9,7 @@ final class AppCoordinator {
     private let player: PlayerService
     private let cacheState = CacheState()
     private let fileInfoProvider: TrackFileInfoProvider
+    private let exporter: TrackExporter
     private var autoCache: AutoCacheController?
     private var loginCoordinator: LoginCoordinator?
     private weak var musicNavigation: UINavigationController?
@@ -25,6 +26,7 @@ final class AppCoordinator {
         player = PlayerService(audioAPI: environment.audioAPI, library: environment.library, settings: environment.settings, network: environment.network)
         player.localFileURL = { [cache = environment.cache] track in cache.localFileURL(for: track) }
         fileInfoProvider = TrackFileInfoProvider(localFileURL: { [cache = environment.cache] track in cache.localFileURL(for: track) })
+        exporter = TrackExporter(cache: environment.cache)
     }
 
     func start() {
@@ -164,6 +166,32 @@ final class AppCoordinator {
         list.onPlayNext = { [player] track in player.playNext(track) }
         list.onAddToQueue = { [player] track in player.addToQueue(track) }
         list.isCached = { [cacheState] track in cacheState.isCached(track) }
+        list.onDownload = { [exporter] track, list in
+            list.showNotice("Downloading...")
+            Task {
+                do {
+                    let file = try await exporter.exportToMusicFolder(track)
+                    list.showNotice("Saved to Music/\(file.lastPathComponent)")
+                } catch {
+                    Log.cache.error("export \(track.storageID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                    list.showError(error)
+                }
+            }
+        }
+        list.onSaveTo = { [exporter] track, list in
+            list.showNotice("Downloading...")
+            Task {
+                do {
+                    let file = try await exporter.exportToTemporary(track)
+                    list.dismissNotice {
+                        DocumentExport.present(fileURL: file, from: list)
+                    }
+                } catch {
+                    Log.cache.error("export \(track.storageID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                    list.showError(error)
+                }
+            }
+        }
         list.onToggleCache = { [cacheState, cache = environment.cache] track in
             let cached = cacheState.isCached(track)
             Log.cache.info("\(cached ? "remove" : "save", privacy: .public) requested for \(track.storageID, privacy: .public)")

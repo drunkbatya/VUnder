@@ -35,6 +35,8 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
     var currentTrack: (() -> Track?)?
     var isCached: ((Track) -> Bool)?
     var onToggleCache: ((Track) -> Void)?
+    var onDownload: ((Track, TrackListViewController) -> Void)?
+    var onSaveTo: ((Track, TrackListViewController) -> Void)?
     private var pendingReveal: Track?
     private var observers: [NSObjectProtocol] = []
 
@@ -112,9 +114,11 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
     }
 
     func showError(_ error: Error) {
-        let alert = UIAlertController(title: "Error", message: error.localizedDescription, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
+        dismissNotice { [weak self] in
+            let alert = UIAlertController(title: "Error", message: error.localizedDescription, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            self?.present(alert, animated: true)
+        }
     }
 
     func reveal(_ track: Track) {
@@ -137,12 +141,27 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
         showNotice("Track is not in this list anymore")
     }
 
+    private weak var noticeAlert: UIAlertController?
+
     func showNotice(_ message: String) {
-        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
-        present(alert, animated: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            alert.dismiss(animated: true)
+        dismissNotice { [weak self] in
+            guard let self else { return }
+            let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+            noticeAlert = alert
+            present(alert, animated: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak alert] in
+                guard let alert, alert.presentingViewController != nil else { return }
+                alert.dismiss(animated: true)
+            }
         }
+    }
+
+    func dismissNotice(completion: @escaping () -> Void) {
+        guard let noticeAlert, noticeAlert.presentingViewController != nil else {
+            completion()
+            return
+        }
+        noticeAlert.dismiss(animated: false, completion: completion)
     }
 
     func numberOfSections(in tableView: UITableView) -> Int {
@@ -187,6 +206,18 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
                     image: UIImage(systemName: cached ? "trash" : "arrow.down.circle"),
                     attributes: cached ? [.destructive] : []
                 ) { _ in onToggleCache(track) })
+            }
+            if track.isAvailable, let self, let onDownload = onDownload {
+                actions.append(UIAction(title: "Download to Music folder", image: UIImage(systemName: "folder")) { [weak self] _ in
+                    guard let self else { return }
+                    onDownload(track, self)
+                })
+            }
+            if track.isAvailable, let self, let onSaveTo = onSaveTo {
+                actions.append(UIAction(title: "Save to...", image: UIImage(systemName: "square.and.arrow.down")) { [weak self] _ in
+                    guard let self else { return }
+                    onSaveTo(track, self)
+                })
             }
             return actions.isEmpty ? nil : UIMenu(children: actions)
         }
