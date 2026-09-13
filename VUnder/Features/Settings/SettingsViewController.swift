@@ -9,6 +9,7 @@ final class SettingsViewController: UITableViewController {
         case music
         case cache
         case account
+        case about
 
         var title: String {
             switch self {
@@ -16,6 +17,7 @@ final class SettingsViewController: UITableViewController {
             case .music: return "Music"
             case .cache: return "Cache"
             case .account: return "Account"
+            case .about: return "About"
             }
         }
     }
@@ -80,6 +82,7 @@ final class SettingsViewController: UITableViewController {
         case .music: return MusicRow.allCases.count
         case .cache: return 2
         case .account: return 1
+        case .about: return 1
         }
     }
 
@@ -115,6 +118,10 @@ final class SettingsViewController: UITableViewController {
         case .account:
             content.text = "Sign out"
             content.textProperties.color = .systemRed
+        case .about:
+            content.text = "Version"
+            content.secondaryText = SettingsViewController.versionText
+            cell.selectionStyle = .none
         }
         cell.contentConfiguration = content
         return cell
@@ -142,7 +149,16 @@ final class SettingsViewController: UITableViewController {
             confirm(title: "Sign out?", action: "Sign out") { [weak self] in
                 self?.onSignOut?()
             }
+        case .about:
+            break
         }
+    }
+
+    private static var versionText: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
     }
 
     private func value(for row: MusicRow) -> Bool {
