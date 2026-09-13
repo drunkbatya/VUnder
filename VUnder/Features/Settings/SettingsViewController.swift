@@ -10,6 +10,7 @@ final class SettingsViewController: UITableViewController {
         case cache
         case account
         case about
+        case debug
 
         var title: String {
             switch self {
@@ -18,22 +19,28 @@ final class SettingsViewController: UITableViewController {
             case .cache: return "Cache"
             case .account: return "Account"
             case .about: return "About"
+            case .debug: return "Debug"
             }
         }
     }
 
-    private enum MusicRow: Int, CaseIterable {
+    private enum ToggleRow: Int, CaseIterable {
         case history
         case cacheEnabled
         case cacheOnlyMine
+        case preferHLS
 
         var title: String {
             switch self {
             case .history: return "Listening history"
             case .cacheEnabled: return "Save played tracks"
             case .cacheOnlyMine: return "Only my tracks"
+            case .preferHLS: return "Request HLS streams (v=5.92)"
             }
         }
+
+        static let music: [ToggleRow] = [.history, .cacheEnabled, .cacheOnlyMine]
+        static let debug: [ToggleRow] = [.preferHLS]
     }
 
     private let settings: AppSettings
@@ -79,10 +86,11 @@ final class SettingsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
         case .appearance: return Appearance.allCases.count
-        case .music: return MusicRow.allCases.count
+        case .music: return ToggleRow.music.count
         case .cache: return 2
         case .account: return 1
         case .about: return 1
+        case .debug: return ToggleRow.debug.count
         }
     }
 
@@ -97,8 +105,8 @@ final class SettingsViewController: UITableViewController {
             let appearance = Appearance.allCases[indexPath.row]
             content.text = appearance.title
             cell.accessoryType = settings.appearance == appearance ? .checkmark : .none
-        case .music:
-            let row = MusicRow.allCases[indexPath.row]
+        case .music, .debug:
+            let row = (Section(rawValue: indexPath.section) == .music ? ToggleRow.music : ToggleRow.debug)[indexPath.row]
             content.text = row.title
             let toggle = UISwitch()
             toggle.isOn = value(for: row)
@@ -133,7 +141,7 @@ final class SettingsViewController: UITableViewController {
         case .appearance:
             settings.appearance = Appearance.allCases[indexPath.row]
             tableView.reloadSections(IndexSet(integer: indexPath.section), with: .none)
-        case .music:
+        case .music, .debug:
             break
         case .cache:
             if indexPath.row == 1 {
@@ -161,21 +169,23 @@ final class SettingsViewController: UITableViewController {
         return "\(version) (\(build))"
     }
 
-    private func value(for row: MusicRow) -> Bool {
+    private func value(for row: ToggleRow) -> Bool {
         switch row {
         case .history: return settings.historyEnabled
         case .cacheEnabled: return settings.cacheEnabled
         case .cacheOnlyMine: return settings.cacheOnlyMine
+        case .preferHLS: return settings.preferHLS
         }
     }
 
     @objc private func toggleChanged(_ toggle: UISwitch) {
-        guard let row = MusicRow(rawValue: toggle.tag) else { return }
+        guard let row = ToggleRow(rawValue: toggle.tag) else { return }
         Log.app.info("setting \(row.title, privacy: .public) = \(toggle.isOn, privacy: .public)")
         switch row {
         case .history: settings.historyEnabled = toggle.isOn
         case .cacheEnabled: settings.cacheEnabled = toggle.isOn
         case .cacheOnlyMine: settings.cacheOnlyMine = toggle.isOn
+        case .preferHLS: settings.preferHLS = toggle.isOn
         }
     }
 

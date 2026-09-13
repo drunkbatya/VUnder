@@ -11,9 +11,15 @@ final class AudioAPI: Sendable {
     static let searchPageSize = 200
 
     private let api: VKAPIClient
+    private let settings: AppSettings
 
-    init(api: VKAPIClient) {
+    init(api: VKAPIClient, settings: AppSettings) {
         self.api = api
+        self.settings = settings
+    }
+
+    private var version: String {
+        settings.preferHLS ? VKAPIRequest.audioHLSVersion : VKAPIRequest.audioVersion
     }
 
     func tracksPage(ownerID: Int64, playlist: Playlist? = nil, offset: Int, count: Int = AudioAPI.libraryPageSize) async throws -> TrackPage {
@@ -28,7 +34,7 @@ final class AudioAPI: Sendable {
                 parameters.append(("access_key", accessKey))
             }
         }
-        let response = try await api.response(.audio("audio.get", parameters: parameters))
+        let response = try await api.response(.audio("audio.get", version: version, parameters: parameters))
         return TrackPage(tracks: response.objects("items").compactMap(Track.init(json:)), total: response.int("count") ?? 0)
     }
 
@@ -49,7 +55,7 @@ final class AudioAPI: Sendable {
     }
 
     func search(query: String, offset: Int, count: Int = AudioAPI.searchPageSize) async throws -> [Track] {
-        let response = try await api.response(.audio("audio.search", parameters: [
+        let response = try await api.response(.audio("audio.search", version: version, parameters: [
             ("q", query),
             ("offset", String(offset)),
             ("count", String(count)),
@@ -60,7 +66,7 @@ final class AudioAPI: Sendable {
     }
 
     func freshURL(for track: Track) async throws -> String? {
-        let json = try await api.call(.audio("audio.getById", parameters: [("audios", track.fullID)]))
+        let json = try await api.call(.audio("audio.getById", version: version, parameters: [("audios", track.fullID)]))
         let items = (json.raw["response"] as? [[String: Any]])?.map(JSONObject.init) ?? []
         let url = items.first.flatMap(Track.init(json:))?.url
         Log.music.info("fresh url for \(track.fullID, privacy: .public): \(url != nil, privacy: .public)")

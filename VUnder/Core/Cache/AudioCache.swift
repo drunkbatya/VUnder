@@ -7,6 +7,7 @@ actor AudioCache {
     private let directory: URL
     private let library: TrackLibrary
     private let urlSession: URLSession
+    private let hls: HLSDownloader
     private var cachedIDs: Set<String> = []
     private var downloading: Set<String> = []
     private var pending: [Track] = []
@@ -25,6 +26,7 @@ actor AudioCache {
         configuration.timeoutIntervalForRequest = 60
         configuration.httpShouldSetCookies = false
         urlSession = URLSession(configuration: configuration)
+        hls = HLSDownloader(urlSession: urlSession, userAgent: VKClientIdentity.userAgent(.general))
     }
 
     nonisolated func fileURL(for track: Track) -> URL {
@@ -48,6 +50,9 @@ actor AudioCache {
         do {
             let marked = try await library.cachedTrackIDs()
             let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            for stale in files where stale.hasSuffix(".part") {
+                try? FileManager.default.removeItem(at: directory.appendingPathComponent(stale))
+            }
             let present = Set(files.filter { $0.hasSuffix(".mp3") }.map { String($0.dropLast(4)) })
             for id in marked.subtracting(present) {
                 Log.cache.notice("file missing for \(id, privacy: .public), unmarking")
@@ -127,6 +132,10 @@ actor AudioCache {
 
     private func download(_ track: Track) async {
         guard let urlString = track.url, let url = URL(string: urlString) else { return }
+        if track.isHLS {
+            await downloadHLS(track, playlistURL: url)
+            return
+        }
         var request = URLRequest(url: url)
         request.setValue(VKClientIdentity.userAgent(.general), forHTTPHeaderField: "User-Agent")
         let started = Date()
@@ -154,6 +163,25 @@ actor AudioCache {
             notify()
         } catch {
             Log.cache.error("download \(track.storageID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func downloadHLS(_ track: Track, playlistURL: URL) async {
+        let temporary = directory.appendingPathComponent("\(track.storageID).part")
+        let started = Date()
+        do {
+            let size = try await hls.download(playlistURL: playlistURL, to: temporary)
+            guard size > 0 else { throw HLSError.noAudioStream }
+            let destination = fileURL(for: track)
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.moveItem(at: temporary, to: destination)
+            try await library.markCached(track, at: Date())
+            cachedIDs.insert(track.storageID)
+            Log.cache.info("downloaded hls \(track.storageID, privacy: .public) \(size, privacy: .public) bytes in \(Int(Date().timeIntervalSince(started) * 1000), privacy: .public)ms")
+            notify()
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            Log.cache.error("download hls \(track.storageID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

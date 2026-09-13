@@ -32,7 +32,7 @@ final class AppEnvironment {
             fatalError("database open failed: \(error)")
         }
         library = TrackLibrary(database: database)
-        audioAPI = AudioAPI(api: api)
+        audioAPI = AudioAPI(api: api, settings: settings)
         do {
             cache = try AudioCache(library: library)
         } catch {

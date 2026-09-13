@@ -36,6 +36,10 @@ struct Track: Codable, Equatable, Sendable, FetchableRecord, PersistableRecord {
         !(url ?? "").isEmpty
     }
 
+    var isHLS: Bool {
+        url?.contains(".m3u8") ?? false
+    }
+
     var formattedDuration: String {
         String(format: "%d:%02d", duration / 60, duration % 60)
     }

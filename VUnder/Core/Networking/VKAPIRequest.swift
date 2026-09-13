@@ -10,6 +10,7 @@ struct VKAPIRequest {
     static let defaultVersion = "5.81"
     static let authVersion = "5.272"
     static let audioVersion = "5.87"
+    static let audioHLSVersion = "5.92"
 
     var method: String
     var version: String
@@ -45,8 +46,8 @@ struct VKAPIRequest {
         )
     }
 
-    static func audio(_ method: String, parameters: [(String, String)]) -> VKAPIRequest {
-        VKAPIRequest(method: method, version: audioVersion, agent: .audio, parameters: parameters)
+    static func audio(_ method: String, version: String = VKAPIRequest.audioVersion, parameters: [(String, String)]) -> VKAPIRequest {
+        VKAPIRequest(method: method, version: version, agent: .audio, parameters: parameters)
     }
 
     var usesBearerHeader: Bool {

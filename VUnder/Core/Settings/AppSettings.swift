@@ -36,7 +36,7 @@ enum RepeatMode: String, CaseIterable {
     }
 }
 
-final class AppSettings {
+final class AppSettings: @unchecked Sendable {
     static let didChange = Notification.Name("AppSettings.didChange")
 
     private enum Key {
@@ -46,6 +46,7 @@ final class AppSettings {
         static let cacheOnlyMine = "cache_only_mine"
         static let shuffle = "player_shuffle"
         static let repeatMode = "player_repeat"
+        static let preferHLS = "debug_prefer_hls"
     }
 
     private let defaults: UserDefaults
@@ -83,6 +84,11 @@ final class AppSettings {
     var repeatMode: RepeatMode {
         get { defaults.string(forKey: Key.repeatMode).flatMap(RepeatMode.init) ?? .off }
         set { update(Key.repeatMode, newValue.rawValue) }
+    }
+
+    var preferHLS: Bool {
+        get { defaults.bool(forKey: Key.preferHLS) }
+        set { update(Key.preferHLS, newValue) }
     }
 
     private func update(_ key: String, _ value: Any) {
