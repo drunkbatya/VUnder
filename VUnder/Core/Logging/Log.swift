@@ -10,6 +10,7 @@ enum Log {
     static let session = Logger(subsystem: subsystem, category: "session")
     static let storage = Logger(subsystem: subsystem, category: "storage")
     static let music = Logger(subsystem: subsystem, category: "music")
+    static let player = Logger(subsystem: subsystem, category: "player")
 }
 
 enum LogRedaction {

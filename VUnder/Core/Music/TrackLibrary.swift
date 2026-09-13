@@ -56,6 +56,18 @@ final class TrackLibrary: Sendable {
         Log.storage.info("library replaced with \(tracks.count, privacy: .public) tracks")
     }
 
+    func recordListen(_ track: Track) async throws {
+        try await database.queue.write { db in
+            if try Track.fetchOne(db, key: ["ownerID": track.ownerID, "id": track.id]) == nil {
+                var stored = track
+                stored.libraryPosition = nil
+                stored.cachedAt = nil
+                try stored.insert(db)
+            }
+            try ListenHistoryEntry(trackOwnerID: track.ownerID, trackID: track.id, listenedAt: Date()).save(db)
+        }
+    }
+
     func clear() async throws {
         let deleted = try await database.queue.write { db in
             try ListenHistoryEntry.deleteAll(db)

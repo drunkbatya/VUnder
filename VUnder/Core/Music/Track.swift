@@ -36,6 +36,11 @@ struct Track: Codable, Equatable, Sendable, FetchableRecord, PersistableRecord {
         String(format: "%d:%02d", duration / 60, duration % 60)
     }
 
+    func isSame(as other: Track?) -> Bool {
+        guard let other else { return false }
+        return ownerID == other.ownerID && id == other.id
+    }
+
     func matches(_ loweredQuery: String) -> Bool {
         artist.lowercased().contains(loweredQuery) || title.lowercased().contains(loweredQuery)
     }

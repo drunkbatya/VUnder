@@ -6,6 +6,7 @@ final class AppCoordinator {
     private let window: UIWindow
     private let environment: AppEnvironment
     private let challengePresenter: ChallengePresenter
+    private let player: PlayerService
     private var loginCoordinator: LoginCoordinator?
     private var observers: [NSObjectProtocol] = []
 
@@ -15,6 +16,7 @@ final class AppCoordinator {
         challengePresenter = ChallengePresenter(presentingViewController: { [weak window] in
             window?.rootViewController?.topmostPresentedViewController
         })
+        player = PlayerService(audioAPI: environment.audioAPI, library: environment.library, settings: environment.settings)
     }
 
     func start() {
@@ -74,8 +76,10 @@ final class AppCoordinator {
         let general = GeneralViewController(settings: environment.settings)
         let root = MusicRootViewController(myMusic: myMusic, general: general)
         let navigation = UINavigationController(rootViewController: root)
+        bindPlayer(to: myMusic)
         myMusic.onSignOut = { [weak self] in
             guard let self else { return }
+            player.stop()
             Task { [library = environment.library] in
                 try? await library.clear()
             }
@@ -85,20 +89,32 @@ final class AppCoordinator {
             guard let self, let navigation else { return }
             navigation.pushViewController(makeGeneralScreen(row, userID: session.userID, navigation: navigation), animated: true)
         }
-        window.rootViewController = navigation
+        window.rootViewController = PlayerContainerViewController(content: navigation, player: player)
+    }
+
+    private func bindPlayer(to list: TrackListViewController) {
+        list.currentTrack = { [player] in player.current }
+        list.onSelectTrack = { [player] track, queue in
+            player.play(track, in: queue)
+        }
     }
 
     private func makeGeneralScreen(_ row: GeneralViewController.Row, userID: Int64, navigation: UINavigationController) -> UIViewController {
         switch row {
         case .saved:
-            return StoredTracksViewController(library: environment.library, source: .saved)
+            let saved = StoredTracksViewController(library: environment.library, source: .saved)
+            bindPlayer(to: saved)
+            return saved
         case .listened:
-            return StoredTracksViewController(library: environment.library, source: .listened)
+            let listened = StoredTracksViewController(library: environment.library, source: .listened)
+            bindPlayer(to: listened)
+            return listened
         case .playlists:
             let playlists = PlaylistsViewController(audioAPI: environment.audioAPI, network: environment.network, ownerID: userID)
             playlists.onSelectPlaylist = { [weak self, weak navigation] playlist in
                 guard let self, let navigation else { return }
                 let tracks = PlaylistTracksViewController(audioAPI: environment.audioAPI, network: environment.network, playlist: playlist)
+                bindPlayer(to: tracks)
                 navigation.pushViewController(tracks, animated: true)
             }
             return playlists

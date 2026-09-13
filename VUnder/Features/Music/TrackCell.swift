@@ -41,12 +41,14 @@ final class TrackCell: UITableViewCell {
         fatalError()
     }
 
-    func configure(with track: Track) {
+    func configure(with track: Track, isCurrent: Bool) {
         titleLabel.text = track.title
         artistLabel.text = track.artist
         durationLabel.text = track.formattedDuration
         let alpha: CGFloat = track.isAvailable ? 1 : 0.4
         titleLabel.alpha = alpha
         artistLabel.alpha = alpha
+        titleLabel.textColor = isCurrent ? Theme.accent : Theme.text
+        titleLabel.font = isCurrent ? .preferredFont(forTextStyle: .headline) : .preferredFont(forTextStyle: .body)
     }
 }

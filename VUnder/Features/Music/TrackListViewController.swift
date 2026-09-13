@@ -22,9 +22,15 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
     }
 
     var onSelectTrack: ((Track, [Track]) -> Void)?
+    var currentTrack: (() -> Track?)?
+    private var playerObserver: NSObjectProtocol?
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        playerObserver = NotificationCenter.default.addObserver(forName: PlayerService.stateDidChange, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            MainActor.assumeIsolated { self.refreshVisibleRows() }
+        }
         view.backgroundColor = Theme.background
         tableView.backgroundColor = Theme.background
         tableView.translatesAutoresizingMaskIntoConstraints = false
@@ -87,7 +93,8 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: TrackCell.reuseIdentifier, for: indexPath) as! TrackCell
-        cell.configure(with: sections[indexPath.section].tracks[indexPath.row])
+        let track = sections[indexPath.section].tracks[indexPath.row]
+        cell.configure(with: track, isCurrent: track.isSame(as: currentTrack?()))
         return cell
     }
 
@@ -105,5 +112,13 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
     }
 
     func loadMoreIfNeeded() {
+    }
+
+    private func refreshVisibleRows() {
+        for indexPath in tableView.indexPathsForVisibleRows ?? [] {
+            guard let cell = tableView.cellForRow(at: indexPath) as? TrackCell else { continue }
+            let track = sections[indexPath.section].tracks[indexPath.row]
+            cell.configure(with: track, isCurrent: track.isSame(as: currentTrack?()))
+        }
     }
 }
