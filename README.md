@@ -5,7 +5,7 @@ IOS app inspired by (closed source :-(((9() [vkmp3mod](https://github.com/egorme
 ## Building
 You probably need to have a valid Apple Developer ID
 ### Xcode
-Just open app, connect your device and tap Build->Profile
+Just open app, connect your device and tap Product->Profile
 ### Cli
 ```bash
 cp local.mk.example local.mk
