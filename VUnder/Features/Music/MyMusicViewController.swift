@@ -2,8 +2,6 @@ import UIKit
 import os
 
 final class MyMusicViewController: TrackListViewController, UISearchBarDelegate {
-    var onSignOut: (() -> Void)?
-
     private let audioAPI: AudioAPI
     private let library: TrackLibrary
     private let network: NetworkMonitor
@@ -45,7 +43,6 @@ final class MyMusicViewController: TrackListViewController, UISearchBarDelegate 
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "My music"
-        navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Sign out", style: .plain, target: self, action: #selector(signOut))
         searchBar.placeholder = "Search"
         searchBar.delegate = self
         searchBar.autocapitalizationType = .none
@@ -175,9 +172,5 @@ final class MyMusicViewController: TrackListViewController, UISearchBarDelegate 
             }
             globalTask = nil
         }
-    }
-
-    @objc private func signOut() {
-        onSignOut?()
     }
 }

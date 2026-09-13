@@ -22,6 +22,20 @@ enum Appearance: String, CaseIterable {
     }
 }
 
+enum RepeatMode: String, CaseIterable {
+    case off
+    case all
+    case one
+
+    var next: RepeatMode {
+        switch self {
+        case .off: return .all
+        case .all: return .one
+        case .one: return .off
+        }
+    }
+}
+
 final class AppSettings {
     static let didChange = Notification.Name("AppSettings.didChange")
 
@@ -30,6 +44,8 @@ final class AppSettings {
         static let historyEnabled = "history_enabled"
         static let cacheEnabled = "cache_enabled"
         static let cacheOnlyMine = "cache_only_mine"
+        static let shuffle = "player_shuffle"
+        static let repeatMode = "player_repeat"
     }
 
     private let defaults: UserDefaults
@@ -57,6 +73,16 @@ final class AppSettings {
     var cacheOnlyMine: Bool {
         get { defaults.bool(forKey: Key.cacheOnlyMine) }
         set { update(Key.cacheOnlyMine, newValue) }
+    }
+
+    var shuffle: Bool {
+        get { defaults.bool(forKey: Key.shuffle) }
+        set { update(Key.shuffle, newValue) }
+    }
+
+    var repeatMode: RepeatMode {
+        get { defaults.string(forKey: Key.repeatMode).flatMap(RepeatMode.init) ?? .off }
+        set { update(Key.repeatMode, newValue.rawValue) }
     }
 
     private func update(_ key: String, _ value: Any) {

@@ -82,6 +82,13 @@ final class TrackLibrary: Sendable {
         }
     }
 
+    func clearCacheMarks() async throws {
+        try await database.queue.write { db in
+            try Track.updateAll(db, Track.Columns.cachedAt.set(to: nil))
+            try TrackLibrary.deleteOrphans(db)
+        }
+    }
+
     func recordListen(_ track: Track) async throws {
         try await database.queue.write { db in
             if try Track.fetchOne(db, key: ["ownerID": track.ownerID, "id": track.id]) == nil {

@@ -2,19 +2,25 @@ import UIKit
 
 final class PlayerViewController: UIViewController {
     private let player: PlayerService
+    private let fileInfoProvider: TrackFileInfoProvider
     private let artworkView = UIImageView()
     private let titleLabel = UILabel()
     private let artistLabel = UILabel()
+    private let fileInfoLabel = UILabel()
+    private var fileInfoTask: Task<Void, Never>?
     private let slider = UISlider()
     private let elapsedLabel = UILabel()
     private let remainingLabel = UILabel()
     private let playButton = UIButton(type: .system)
+    private let shuffleButton = UIButton(type: .system)
+    private let repeatButton = UIButton(type: .system)
     private var observers: [NSObjectProtocol] = []
     private var artworkTask: Task<Void, Never>?
     private var shownTrack: Track?
 
-    init(player: PlayerService) {
+    init(player: PlayerService, fileInfoProvider: TrackFileInfoProvider) {
         self.player = player
+        self.fileInfoProvider = fileInfoProvider
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -51,6 +57,9 @@ final class PlayerViewController: UIViewController {
         artistLabel.font = .preferredFont(forTextStyle: .subheadline)
         artistLabel.textColor = Theme.secondaryText
         artistLabel.textAlignment = .center
+        fileInfoLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        fileInfoLabel.textColor = Theme.secondaryText
+        fileInfoLabel.textAlignment = .center
         for label in [elapsedLabel, remainingLabel] {
             label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
             label.textColor = Theme.secondaryText
@@ -71,6 +80,23 @@ final class PlayerViewController: UIViewController {
             button.widthAnchor.constraint(equalToConstant: 72).isActive = true
             button.heightAnchor.constraint(equalToConstant: 72).isActive = true
         }
+        shuffleButton.setImage(UIImage(systemName: "shuffle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
+        shuffleButton.addTarget(self, action: #selector(toggleShuffle), for: .touchUpInside)
+        repeatButton.addTarget(self, action: #selector(cycleRepeat), for: .touchUpInside)
+        for button in [shuffleButton, repeatButton] {
+            button.widthAnchor.constraint(equalToConstant: 56).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        }
+        let modes = UIStackView(arrangedSubviews: [shuffleButton, repeatButton])
+        modes.spacing = 48
+        let modesRow = UIView()
+        modes.translatesAutoresizingMaskIntoConstraints = false
+        modesRow.addSubview(modes)
+        NSLayoutConstraint.activate([
+            modes.centerXAnchor.constraint(equalTo: modesRow.centerXAnchor),
+            modes.topAnchor.constraint(equalTo: modesRow.topAnchor),
+            modes.bottomAnchor.constraint(equalTo: modesRow.bottomAnchor),
+        ])
 
         let times = UIStackView(arrangedSubviews: [elapsedLabel, remainingLabel])
         times.distribution = .fillEqually
@@ -84,10 +110,11 @@ final class PlayerViewController: UIViewController {
             controls.topAnchor.constraint(equalTo: controlsRow.topAnchor),
             controls.bottomAnchor.constraint(equalTo: controlsRow.bottomAnchor),
         ])
-        let stack = FormControls.stack([artworkView, titleLabel, artistLabel, slider, times, controlsRow], spacing: 12)
+        let stack = FormControls.stack([artworkView, titleLabel, artistLabel, fileInfoLabel, slider, times, controlsRow, modesRow], spacing: 12)
         stack.setCustomSpacing(24, after: artworkView)
         stack.setCustomSpacing(4, after: titleLabel)
-        stack.setCustomSpacing(24, after: artistLabel)
+        stack.setCustomSpacing(4, after: artistLabel)
+        stack.setCustomSpacing(24, after: fileInfoLabel)
         stack.setCustomSpacing(4, after: slider)
         stack.setCustomSpacing(24, after: times)
         view.addSubview(stack)
@@ -111,7 +138,20 @@ final class PlayerViewController: UIViewController {
         if shownTrack != track {
             shownTrack = track
             loadArtwork(track)
+            loadFileInfo(track)
         }
+        shuffleButton.tintColor = player.shuffleEnabled ? Theme.accent : Theme.secondaryText
+        let repeatSymbol = player.repeatMode == .one ? "repeat.1" : "repeat"
+        repeatButton.setImage(UIImage(systemName: repeatSymbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
+        repeatButton.tintColor = player.repeatMode == .off ? Theme.secondaryText : Theme.accent
+    }
+
+    @objc private func toggleShuffle() {
+        player.toggleShuffle()
+    }
+
+    @objc private func cycleRepeat() {
+        player.cycleRepeatMode()
     }
 
     private func loadArtwork(_ track: Track) {
@@ -122,6 +162,16 @@ final class PlayerViewController: UIViewController {
             let image = await ImageLoader.shared.image(for: url)
             guard let self, !Task.isCancelled, shownTrack == track, let image else { return }
             artworkView.image = image
+        }
+    }
+
+    private func loadFileInfo(_ track: Track) {
+        fileInfoTask?.cancel()
+        fileInfoLabel.text = " "
+        fileInfoTask = Task { [weak self] in
+            let info = await self?.fileInfoProvider.info(for: track)
+            guard let self, !Task.isCancelled, shownTrack == track else { return }
+            fileInfoLabel.text = info?.formatted ?? " "
         }
     }
 

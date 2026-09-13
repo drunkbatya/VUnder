@@ -1,6 +1,8 @@
 import UIKit
 
 final class MusicRootViewController: UIViewController {
+    var onSettings: (() -> Void)?
+
     private let segments = UISegmentedControl(items: ["My music", "General"])
     private let pages: [UIViewController]
     private var current: UIViewController?
@@ -21,7 +23,12 @@ final class MusicRootViewController: UIViewController {
         segments.selectedSegmentIndex = 0
         segments.addTarget(self, action: #selector(segmentChanged), for: .valueChanged)
         navigationItem.titleView = segments
+        navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "gearshape"), style: .plain, target: self, action: #selector(openSettings))
         show(pages[0])
+    }
+
+    @objc private func openSettings() {
+        onSettings?()
     }
 
     @objc private func segmentChanged() {
@@ -46,7 +53,5 @@ final class MusicRootViewController: UIViewController {
         ])
         controller.didMove(toParent: self)
         current = controller
-        navigationItem.leftBarButtonItem = controller.navigationItem.leftBarButtonItem
-        navigationItem.rightBarButtonItem = controller.navigationItem.rightBarButtonItem
     }
 }

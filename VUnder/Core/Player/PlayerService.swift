@@ -9,6 +9,7 @@ final class PlayerService {
 
     private(set) var queue: [Track] = []
     private(set) var currentIndex: Int?
+    private var order: [Int] = []
     private(set) var state: PlaybackState = .idle
     private(set) var progress: PlaybackProgress = .zero
 
@@ -47,10 +48,54 @@ final class PlayerService {
         state == .playing || state == .loading
     }
 
+    var shuffleEnabled: Bool {
+        settings.shuffle
+    }
+
+    var repeatMode: RepeatMode {
+        settings.repeatMode
+    }
+
     func play(_ track: Track, in tracks: [Track]) {
         queue = tracks
         currentIndex = tracks.firstIndex(of: track) ?? 0
+        rebuildOrder()
         startCurrent()
+    }
+
+    func toggleShuffle() {
+        settings.shuffle.toggle()
+        rebuildOrder()
+        Log.player.info("shuffle \(self.settings.shuffle, privacy: .public)")
+        NotificationCenter.default.post(name: PlayerService.stateDidChange, object: self)
+    }
+
+    func cycleRepeatMode() {
+        settings.repeatMode = settings.repeatMode.next
+        Log.player.info("repeat \(self.settings.repeatMode.rawValue, privacy: .public)")
+        NotificationCenter.default.post(name: PlayerService.stateDidChange, object: self)
+    }
+
+    private func rebuildOrder() {
+        guard !queue.isEmpty else {
+            order = []
+            return
+        }
+        let indices = Array(queue.indices)
+        guard settings.shuffle, let index = currentIndex else {
+            order = indices
+            return
+        }
+        order = [index] + indices.filter { $0 != index }.shuffled()
+    }
+
+    private var orderPosition: Int? {
+        currentIndex.flatMap { order.firstIndex(of: $0) }
+    }
+
+    var upcoming: Track? {
+        guard let position = orderPosition, position + 1 < order.count else { return nil }
+        return queue[order[position + 1]]
     }
 
     func togglePlayPause() {
@@ -82,23 +127,36 @@ final class PlayerService {
     }
 
     func next() {
-        guard let index = currentIndex else { return }
-        guard index + 1 < queue.count else {
-            Log.player.info("queue finished")
-            stop()
+        advance(automatic: false)
+    }
+
+    private func advance(automatic: Bool) {
+        guard let position = orderPosition else { return }
+        if automatic, settings.repeatMode == .one {
+            seek(to: 0)
+            resume()
             return
         }
-        currentIndex = index + 1
+        var nextPosition = position + 1
+        if nextPosition >= order.count {
+            guard settings.repeatMode == .all else {
+                Log.player.info("queue finished")
+                stop()
+                return
+            }
+            nextPosition = 0
+        }
+        currentIndex = order[nextPosition]
         startCurrent()
     }
 
     func previous() {
-        guard let index = currentIndex else { return }
-        if progress.position > 3 || index == 0 {
+        guard let position = orderPosition else { return }
+        if progress.position > 3 || position == 0 {
             seek(to: 0)
             return
         }
-        currentIndex = index - 1
+        currentIndex = order[position - 1]
         startCurrent()
     }
 
@@ -150,11 +208,11 @@ final class PlayerService {
     }
 
     private func nextCached() {
-        guard let index = currentIndex, let locator = localFileURL else {
+        guard let position = orderPosition, let locator = localFileURL else {
             stop()
             return
         }
-        guard let nextIndex = queue.indices.dropFirst(index + 1).first(where: { locator(queue[$0]) != nil }) else {
+        guard let nextIndex = order.dropFirst(position + 1).first(where: { locator(queue[$0]) != nil }) else {
             Log.player.info("no cached tracks ahead in queue, stopping")
             stop()
             return
@@ -206,7 +264,7 @@ final class PlayerService {
             guard let self else { return }
             MainActor.assumeIsolated {
                 Log.player.info("finished \(track.fullID, privacy: .public)")
-                self.next()
+                self.advance(automatic: true)
             }
         })
         itemObservers.append(NotificationCenter.default.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main) { [weak self] notification in

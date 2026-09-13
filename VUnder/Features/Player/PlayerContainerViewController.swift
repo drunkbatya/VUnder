@@ -3,13 +3,15 @@ import UIKit
 final class PlayerContainerViewController: UIViewController {
     private let content: UIViewController
     private let player: PlayerService
+    private let fileInfoProvider: TrackFileInfoProvider
     private let miniPlayer = MiniPlayerView()
     private var miniPlayerBottom: NSLayoutConstraint?
     private var observers: [NSObjectProtocol] = []
 
-    init(content: UIViewController, player: PlayerService) {
+    init(content: UIViewController, player: PlayerService, fileInfoProvider: TrackFileInfoProvider) {
         self.content = content
         self.player = player
+        self.fileInfoProvider = fileInfoProvider
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -62,6 +64,6 @@ final class PlayerContainerViewController: UIViewController {
 
     private func openPlayer() {
         guard player.current != nil else { return }
-        present(PlayerViewController(player: player), animated: true)
+        present(PlayerViewController(player: player, fileInfoProvider: fileInfoProvider), animated: true)
     }
 }

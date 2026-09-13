@@ -1,7 +1,7 @@
 import UIKit
 import os
 
-final class StoredTracksViewController: TrackListViewController {
+final class StoredTracksViewController: FilterableTrackListViewController {
     enum Source {
         case saved
         case listened
@@ -37,7 +37,7 @@ final class StoredTracksViewController: TrackListViewController {
     }
 
     override var emptyMessage: String {
-        source.emptyMessage
+        allTracks.isEmpty ? source.emptyMessage : super.emptyMessage
     }
 
     override func viewDidLoad() {
@@ -61,8 +61,8 @@ final class StoredTracksViewController: TrackListViewController {
             guard let self else { return }
             do {
                 switch source {
-                case .saved: tracks = try await library.savedTracks()
-                case .listened: tracks = try await library.listenedTracks()
+                case .saved: allTracks = try await library.savedTracks()
+                case .listened: allTracks = try await library.listenedTracks()
                 }
             } catch {
                 Log.music.error("\(self.source.title, privacy: .public) load failed: \(error.localizedDescription, privacy: .public)")

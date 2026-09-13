@@ -1,7 +1,7 @@
 import UIKit
 import os
 
-final class PlaylistTracksViewController: TrackListViewController {
+final class PlaylistTracksViewController: FilterableTrackListViewController {
     private let audioAPI: AudioAPI
     private let network: NetworkMonitor
     private let playlist: Playlist
@@ -24,6 +24,9 @@ final class PlaylistTracksViewController: TrackListViewController {
         if loadTask != nil {
             return "Loading..."
         }
+        if !allTracks.isEmpty {
+            return super.emptyMessage
+        }
         return network.isConnected ? (loaded ? "Playlist is empty" : "") : "No internet connection"
     }
 
@@ -44,7 +47,7 @@ final class PlaylistTracksViewController: TrackListViewController {
                 let result = try await audioAPI.allTracks(ownerID: playlist.ownerID, playlist: playlist) { _, _ in }
                 loaded = true
                 loadTask = nil
-                tracks = result
+                allTracks = result
             } catch {
                 Log.music.error("playlist \(self.playlist.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
                 loadTask = nil

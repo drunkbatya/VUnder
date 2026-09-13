@@ -1,14 +1,17 @@
 import UIKit
 import os
 
-final class PlaylistsViewController: UITableViewController {
+final class PlaylistsViewController: UITableViewController, UISearchBarDelegate {
     var onSelectPlaylist: ((Playlist) -> Void)?
 
     private let audioAPI: AudioAPI
     private let network: NetworkMonitor
     private let ownerID: Int64
     private let emptyLabel = FormControls.bodyLabel("")
+    private let searchBar = UISearchBar()
     private var playlists: [Playlist] = []
+    private var shown: [Playlist] = []
+    private var query = ""
     private var loadTask: Task<Void, Never>?
 
     init(audioAPI: AudioAPI, network: NetworkMonitor, ownerID: Int64) {
@@ -29,6 +32,12 @@ final class PlaylistsViewController: UITableViewController {
         tableView.backgroundColor = Theme.background
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "playlist")
         tableView.backgroundView = emptyLabel
+        searchBar.placeholder = "Filter"
+        searchBar.delegate = self
+        searchBar.autocapitalizationType = .none
+        searchBar.searchBarStyle = .minimal
+        searchBar.sizeToFit()
+        tableView.tableHeaderView = searchBar
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(load), for: .valueChanged)
         load()
@@ -47,7 +56,7 @@ final class PlaylistsViewController: UITableViewController {
             do {
                 playlists = try await audioAPI.playlists(ownerID: ownerID)
                 emptyLabel.text = playlists.isEmpty ? "No playlists" : ""
-                tableView.reloadData()
+                applyFilter()
             } catch {
                 Log.music.error("playlists failed: \(error.localizedDescription, privacy: .public)")
                 emptyLabel.text = playlists.isEmpty ? error.localizedDescription : ""
@@ -57,13 +66,31 @@ final class PlaylistsViewController: UITableViewController {
         }
     }
 
+    private func applyFilter() {
+        let lowered = query.lowercased()
+        shown = query.isEmpty ? playlists : playlists.filter { $0.title.lowercased().contains(lowered) }
+        if !playlists.isEmpty {
+            emptyLabel.text = shown.isEmpty ? "Nothing matches \"\(query)\"" : ""
+        }
+        tableView.reloadData()
+    }
+
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        applyFilter()
+    }
+
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        searchBar.resignFirstResponder()
+    }
+
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        playlists.count
+        shown.count
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "playlist", for: indexPath)
-        let playlist = playlists[indexPath.row]
+        let playlist = shown[indexPath.row]
         var content = cell.defaultContentConfiguration()
         content.text = playlist.title
         content.secondaryText = "\(playlist.trackCount) tracks"
@@ -75,6 +102,6 @@ final class PlaylistsViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        onSelectPlaylist?(playlists[indexPath.row])
+        onSelectPlaylist?(shown[indexPath.row])
     }
 }

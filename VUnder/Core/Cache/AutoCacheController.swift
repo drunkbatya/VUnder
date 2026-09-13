@@ -35,8 +35,8 @@ final class AutoCacheController {
         guard player.progress.position >= threshold, network.isConnected else { return }
         triggeredTrack = track
         var candidates = [track]
-        if let index = player.currentIndex, index + 1 < player.queue.count {
-            candidates.append(player.queue[index + 1])
+        if let upcoming = player.upcoming {
+            candidates.append(upcoming)
         }
         for candidate in candidates where shouldCache(candidate) && !cacheState.isCached(candidate) {
             Log.cache.info("auto-cache \(candidate.storageID, privacy: .public)")

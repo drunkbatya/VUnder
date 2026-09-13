@@ -99,6 +99,11 @@ actor AudioCache {
             try? FileManager.default.removeItem(at: file)
         }
         cachedIDs = []
+        do {
+            try await library.clearCacheMarks()
+        } catch {
+            Log.cache.error("clearing cache marks failed: \(error.localizedDescription, privacy: .public)")
+        }
         Log.cache.info("cleared \(files.count, privacy: .public) files")
         notify()
     }
