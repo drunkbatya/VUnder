@@ -18,8 +18,34 @@ final class AudioAPI: Sendable {
         self.settings = settings
     }
 
-    private var version: String {
-        settings.preferHLS ? VKAPIRequest.audioHLSVersion : VKAPIRequest.audioVersion
+    private static let nonVersionErrorCodes: Set<Int> = [5, 6, 9, 10, 14, 17, 24, 29]
+
+    private func audioCall(_ method: String, parameters: [(String, String)]) async throws -> JSONObject {
+        guard !settings.preferHLS else {
+            return try await api.call(.audio(method, version: VKAPIRequest.audioHLSVersion, parameters: parameters))
+        }
+        do {
+            return try await api.call(.audio(method, version: VKAPIRequest.audioVersion, parameters: parameters))
+        } catch VKAPIError.api(let error) where !AudioAPI.nonVersionErrorCodes.contains(error.code) {
+            Log.music.error("\(method, privacy: .public) v=\(VKAPIRequest.audioVersion, privacy: .public) failed \(error.code, privacy: .public): \(error.message, privacy: .public), retrying with v=\(VKAPIRequest.audioHLSVersion, privacy: .public)")
+            let json: JSONObject
+            do {
+                json = try await api.call(.audio(method, version: VKAPIRequest.audioHLSVersion, parameters: parameters))
+            } catch {
+                throw VKAPIError.api(error)
+            }
+            settings.preferHLS = true
+            Log.music.fault("audio api v=\(VKAPIRequest.audioVersion, privacy: .public) is broken, switched to HLS version permanently")
+            return json
+        }
+    }
+
+    private func audioResponse(_ method: String, parameters: [(String, String)]) async throws -> JSONObject {
+        let json = try await audioCall(method, parameters: parameters)
+        guard let response = json.object("response") else {
+            throw VKAPIError.malformedResponse(method: method)
+        }
+        return response
     }
 
     func tracksPage(ownerID: Int64, playlist: Playlist? = nil, offset: Int, count: Int = AudioAPI.libraryPageSize) async throws -> TrackPage {
@@ -34,7 +60,7 @@ final class AudioAPI: Sendable {
                 parameters.append(("access_key", accessKey))
             }
         }
-        let response = try await api.response(.audio("audio.get", version: version, parameters: parameters))
+        let response = try await audioResponse("audio.get", parameters: parameters)
         return TrackPage(tracks: response.objects("items").compactMap(Track.init(json:)), total: response.int("count") ?? 0)
     }
 
@@ -55,18 +81,18 @@ final class AudioAPI: Sendable {
     }
 
     func search(query: String, offset: Int, count: Int = AudioAPI.searchPageSize) async throws -> [Track] {
-        let response = try await api.response(.audio("audio.search", version: version, parameters: [
+        let response = try await audioResponse("audio.search", parameters: [
             ("q", query),
             ("offset", String(offset)),
             ("count", String(count)),
-        ]))
+        ])
         let tracks = response.objects("items").compactMap(Track.init(json:))
         Log.music.info("search '\(query, privacy: .public)' offset=\(offset, privacy: .public) items=\(tracks.count, privacy: .public)")
         return tracks
     }
 
     func freshURL(for track: Track) async throws -> String? {
-        let json = try await api.call(.audio("audio.getById", version: version, parameters: [("audios", track.fullID)]))
+        let json = try await audioCall("audio.getById", parameters: [("audios", track.fullID)])
         let items = (json.raw["response"] as? [[String: Any]])?.map(JSONObject.init) ?? []
         let url = items.first.flatMap(Track.init(json:))?.url
         Log.music.info("fresh url for \(track.fullID, privacy: .public): \(url != nil, privacy: .public)")
@@ -74,12 +100,12 @@ final class AudioAPI: Sendable {
     }
 
     func playlists(ownerID: Int64) async throws -> [Playlist] {
-        let response = try await api.response(.audio("audio.getPlaylists", parameters: [
+        let response = try await audioResponse("audio.getPlaylists", parameters: [
             ("owner_id", String(ownerID)),
             ("filters", "all"),
             ("extended", "1"),
             ("count", "200"),
-        ]))
+        ])
         let playlists = response.objects("items").compactMap(Playlist.init(json:))
         Log.music.info("playlists loaded owner=\(ownerID, privacy: .public) items=\(playlists.count, privacy: .public)")
         return playlists
