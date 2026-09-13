@@ -46,6 +46,7 @@ final class PlayerContainerViewController: UIViewController {
         miniPlayer.onTap = { [weak self] in self?.openPlayer() }
         miniPlayer.onPlayPause = { [weak self] in self?.player.togglePlayPause() }
         miniPlayer.onNext = { [weak self] in self?.player.next() }
+        miniPlayer.onPrevious = { [weak self] in self?.player.previous() }
         observers.append(NotificationCenter.default.addObserver(forName: PlayerService.stateDidChange, object: player, queue: .main) { [weak self] _ in
             guard let self else { return }
             MainActor.assumeIsolated { self.stateChanged() }

@@ -10,6 +10,7 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
     let tableView = UITableView(frame: .zero, style: .plain)
     let emptyLabel = FormControls.bodyLabel("")
     private var tableTop: NSLayoutConstraint?
+    private lazy var scrollToTopButton = ScrollToTopButton(scrollView: tableView)
 
     var sections: [TrackSection] = [] {
         didSet {
@@ -69,7 +70,12 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
             emptyLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24),
             emptyLabel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
         ])
+        scrollToTopButton.attach(to: view)
         updateEmptyState()
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        scrollToTopButton.scrollViewDidScroll()
     }
 
     var emptyMessage: String {

@@ -6,9 +6,11 @@ final class MiniPlayerView: UIView {
     var onTap: (() -> Void)?
     var onPlayPause: (() -> Void)?
     var onNext: (() -> Void)?
+    var onPrevious: (() -> Void)?
 
     private let titleLabel = UILabel()
     private let artistLabel = UILabel()
+    private let previousButton = UIButton(type: .system)
     private let playButton = UIButton(type: .system)
     private let nextButton = UIButton(type: .system)
     private let progressView = UIProgressView(progressViewStyle: .bar)
@@ -20,17 +22,19 @@ final class MiniPlayerView: UIView {
         titleLabel.textColor = Theme.text
         artistLabel.font = .preferredFont(forTextStyle: .caption1)
         artistLabel.textColor = Theme.secondaryText
+        previousButton.setImage(UIImage(systemName: "backward.fill"), for: .normal)
         playButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
         nextButton.setImage(UIImage(systemName: "forward.fill"), for: .normal)
+        previousButton.addTarget(self, action: #selector(previousTapped), for: .touchUpInside)
         playButton.addTarget(self, action: #selector(playPause), for: .touchUpInside)
         nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
-        for button in [playButton, nextButton] {
+        for button in [previousButton, playButton, nextButton] {
             button.widthAnchor.constraint(equalToConstant: 44).isActive = true
             button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         }
         let textStack = UIStackView(arrangedSubviews: [titleLabel, artistLabel])
         textStack.axis = .vertical
-        let row = UIStackView(arrangedSubviews: [textStack, playButton, nextButton])
+        let row = UIStackView(arrangedSubviews: [textStack, previousButton, playButton, nextButton])
         row.axis = .horizontal
         row.alignment = .center
         row.spacing = 4
@@ -77,5 +81,9 @@ final class MiniPlayerView: UIView {
 
     @objc private func nextTapped() {
         onNext?()
+    }
+
+    @objc private func previousTapped() {
+        onPrevious?()
     }
 }
