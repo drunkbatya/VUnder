@@ -1,3 +1,4 @@
+import CommonCrypto
 import Foundation
 import os
 
@@ -9,9 +10,6 @@ actor AudioCache {
     private let urlSession: URLSession
     private let hls: HLSDownloader
     private var cachedIDs: Set<String> = []
-    private var downloading: Set<String> = []
-    private var pending: [Track] = []
-    private var worker: Task<Void, Never>?
 
     init(library: TrackLibrary) throws {
         self.library = library
@@ -42,10 +40,6 @@ actor AudioCache {
         cachedIDs.contains(track.storageID)
     }
 
-    func isDownloading(_ track: Track) -> Bool {
-        downloading.contains(track.storageID) || pending.contains(where: { $0.storageID == track.storageID })
-    }
-
     func reconcile() async {
         do {
             let marked = try await library.cachedTrackIDs()
@@ -72,18 +66,62 @@ actor AudioCache {
         }
     }
 
-    func enqueue(_ track: Track) {
-        guard !isCached(track), !isDownloading(track), track.url != nil else { return }
-        pending.append(track)
-        Log.cache.info("queued \(track.storageID, privacy: .public), pending=\(self.pending.count, privacy: .public)")
-        notify()
-        if worker == nil {
-            worker = Task { await drain() }
+    func materialize(_ track: Track, to destination: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
+        try? FileManager.default.removeItem(at: destination)
+        if let local = localFileURL(for: track) {
+            try FileManager.default.copyItem(at: local, to: destination)
+            progress(1)
+            return
         }
+        guard let urlString = track.url, let url = URL(string: urlString) else { throw DownloadError.noURL(track.storageID) }
+        if track.isHLS {
+            let size = try await hls.download(playlistURL: url, to: destination, progress: progress)
+            guard size > 0 else { throw HLSError.noAudioStream }
+            return
+        }
+        var request = URLRequest(url: url)
+        request.setValue(VKClientIdentity.userAgent(.general), forHTTPHeaderField: "User-Agent")
+        let (bytes, response) = try await urlSession.bytes(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else { throw DownloadError.httpStatus(track.storageID, status) }
+        let expected = response.expectedContentLength
+        FileManager.default.createFile(atPath: destination.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: destination)
+        defer { try? handle.close() }
+        var buffer = Data()
+        buffer.reserveCapacity(65_536)
+        var received: Int64 = 0
+        for try await byte in bytes {
+            buffer.append(byte)
+            if buffer.count >= 65_536 {
+                try handle.write(contentsOf: buffer)
+                received += Int64(buffer.count)
+                buffer.removeAll(keepingCapacity: true)
+                if expected > 0 {
+                    progress(Double(received) / Double(expected))
+                }
+            }
+        }
+        try handle.write(contentsOf: buffer)
+        received += Int64(buffer.count)
+        guard received > 0, expected <= 0 || received == expected else {
+            throw DownloadError.incomplete(track.storageID, Int(received), expected)
+        }
+        progress(1)
+    }
+
+    func install(_ track: Track, from source: URL) async throws {
+        let destination = fileURL(for: track)
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: source, to: destination)
+        try await library.markCached(track, at: Date())
+        cachedIDs.insert(track.storageID)
+        let size = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        Log.cache.info("installed \(track.storageID, privacy: .public) \(size, privacy: .public) bytes")
+        notify()
     }
 
     func remove(_ track: Track) async {
-        pending.removeAll { $0.storageID == track.storageID }
         try? FileManager.default.removeItem(at: fileURL(for: track))
         cachedIDs.remove(track.storageID)
         do {
@@ -96,9 +134,6 @@ actor AudioCache {
     }
 
     func clear() async {
-        pending = []
-        worker?.cancel()
-        worker = nil
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         for file in files {
             try? FileManager.default.removeItem(at: file)
@@ -118,70 +153,6 @@ actor AudioCache {
         return files.reduce(0) { total, file in
             total + Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         }
-    }
-
-    private func drain() async {
-        while !pending.isEmpty, !Task.isCancelled {
-            let track = pending.removeFirst()
-            downloading.insert(track.storageID)
-            await download(track)
-            downloading.remove(track.storageID)
-        }
-        worker = nil
-    }
-
-    private func download(_ track: Track) async {
-        let temporary = directory.appendingPathComponent("\(track.storageID).part")
-        let started = Date()
-        do {
-            let size = try await fetchAudio(track, to: temporary)
-            let destination = fileURL(for: track)
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: temporary, to: destination)
-            try await library.markCached(track, at: Date())
-            cachedIDs.insert(track.storageID)
-            Log.cache.info("downloaded \(track.isHLS ? "hls " : "", privacy: .public)\(track.storageID, privacy: .public) \(size, privacy: .public) bytes in \(Int(Date().timeIntervalSince(started) * 1000), privacy: .public)ms")
-            notify()
-        } catch {
-            try? FileManager.default.removeItem(at: temporary)
-            Log.cache.error("download \(track.storageID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    func exportFile(for track: Track) async throws -> URL {
-        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("\(track.storageID)-\(UUID().uuidString).mp3")
-        if let local = localFileURL(for: track) {
-            try FileManager.default.copyItem(at: local, to: temporary)
-            return temporary
-        }
-        _ = try await fetchAudio(track, to: temporary)
-        return temporary
-    }
-
-    private func fetchAudio(_ track: Track, to destination: URL) async throws -> Int {
-        guard let urlString = track.url, let url = URL(string: urlString) else { throw DownloadError.noURL(track.storageID) }
-        try? FileManager.default.removeItem(at: destination)
-        if track.isHLS {
-            let size = try await hls.download(playlistURL: url, to: destination)
-            guard size > 0 else { throw HLSError.noAudioStream }
-            return size
-        }
-        var request = URLRequest(url: url)
-        request.setValue(VKClientIdentity.userAgent(.general), forHTTPHeaderField: "User-Agent")
-        let (temporary, response) = try await urlSession.download(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else {
-            try? FileManager.default.removeItem(at: temporary)
-            throw DownloadError.httpStatus(track.storageID, status)
-        }
-        let size = (try? temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        let expected = response.expectedContentLength
-        guard size > 0, expected <= 0 || Int64(size) == expected else {
-            try? FileManager.default.removeItem(at: temporary)
-            throw DownloadError.incomplete(track.storageID, size, expected)
-        }
-        try FileManager.default.moveItem(at: temporary, to: destination)
-        return size
     }
 
     private func notify() {

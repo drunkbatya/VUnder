@@ -11,7 +11,7 @@ final class HLSDownloader: Sendable {
         self.userAgent = userAgent
     }
 
-    func download(playlistURL: URL, to destination: URL) async throws -> Int {
+    func download(playlistURL: URL, to destination: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> Int {
         let segments = try await mediaSegments(playlistURL: playlistURL)
         Log.cache.info("hls \(playlistURL.lastPathComponent, privacy: .public): \(segments.count, privacy: .public) segments")
         FileManager.default.createFile(atPath: destination.path, contents: nil)
@@ -38,6 +38,7 @@ final class HLSDownloader: Sendable {
             }
             try handle.write(contentsOf: audio)
             written += audio.count
+            progress(Double(index + 1) / Double(segments.count))
         }
         Log.cache.info("hls \(playlistURL.lastPathComponent, privacy: .public): stream type \(demuxer.audioStreamType.map { String(format: "0x%02x", $0) } ?? "?", privacy: .public), \(written, privacy: .public) bytes")
         return written

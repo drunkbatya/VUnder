@@ -2,12 +2,6 @@ import Foundation
 import os
 
 final class TrackExporter: Sendable {
-    private let cache: AudioCache
-
-    init(cache: AudioCache) {
-        self.cache = cache
-    }
-
     static func musicDirectory() throws -> URL {
         let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         let music = documents.appendingPathComponent("Music", isDirectory: true)
@@ -30,16 +24,14 @@ final class TrackExporter: Sendable {
         return name
     }
 
-    func exportToTemporary(_ track: Track) async throws -> URL {
-        let temporary = try await cache.exportFile(for: track)
-        let named = temporary.deletingLastPathComponent().appendingPathComponent(TrackExporter.fileName(for: track) + ".mp3")
+    func renameForSharing(_ source: URL, for track: Track) throws -> URL {
+        let named = source.deletingLastPathComponent().appendingPathComponent(TrackExporter.fileName(for: track) + ".mp3")
         try? FileManager.default.removeItem(at: named)
-        try FileManager.default.moveItem(at: temporary, to: named)
+        try FileManager.default.moveItem(at: source, to: named)
         return named
     }
 
-    func exportToMusicFolder(_ track: Track) async throws -> URL {
-        let source = try await cache.exportFile(for: track)
+    func placeInMusicFolder(_ source: URL, for track: Track) throws -> URL {
         let directory = try TrackExporter.musicDirectory()
         let base = TrackExporter.fileName(for: track)
         var destination = directory.appendingPathComponent(base + ".mp3")

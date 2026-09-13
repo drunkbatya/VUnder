@@ -4,7 +4,7 @@ import os
 @MainActor
 final class AutoCacheController {
     private let player: PlayerService
-    private let cache: AudioCache
+    private let downloads: DownloadCenter
     private let cacheState: CacheState
     private let settings: AppSettings
     private let network: NetworkMonitor
@@ -12,9 +12,9 @@ final class AutoCacheController {
     private var triggeredTrack: Track?
     private var observers: [NSObjectProtocol] = []
 
-    init(player: PlayerService, cache: AudioCache, cacheState: CacheState, settings: AppSettings, network: NetworkMonitor, userID: Int64) {
+    init(player: PlayerService, downloads: DownloadCenter, cacheState: CacheState, settings: AppSettings, network: NetworkMonitor, userID: Int64) {
         self.player = player
-        self.cache = cache
+        self.downloads = downloads
         self.cacheState = cacheState
         self.settings = settings
         self.network = network
@@ -40,9 +40,7 @@ final class AutoCacheController {
         }
         for candidate in candidates where shouldCache(candidate) && !cacheState.isCached(candidate) {
             Log.cache.info("auto-cache \(candidate.storageID, privacy: .public)")
-            Task { [cache] in
-                await cache.enqueue(candidate)
-            }
+            downloads.enqueue(candidate, kind: .cache)
         }
     }
 }

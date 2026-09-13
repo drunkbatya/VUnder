@@ -10,6 +10,7 @@ final class AppCoordinator {
     private let cacheState = CacheState()
     private let fileInfoProvider: TrackFileInfoProvider
     private let exporter: TrackExporter
+    private let downloads: DownloadCenter
     private var autoCache: AutoCacheController?
     private var loginCoordinator: LoginCoordinator?
     private weak var musicNavigation: UINavigationController?
@@ -26,7 +27,8 @@ final class AppCoordinator {
         player = PlayerService(audioAPI: environment.audioAPI, library: environment.library, settings: environment.settings, network: environment.network)
         player.localFileURL = { [cache = environment.cache] track in cache.localFileURL(for: track) }
         fileInfoProvider = TrackFileInfoProvider(localFileURL: { [cache = environment.cache] track in cache.localFileURL(for: track) })
-        exporter = TrackExporter(cache: environment.cache)
+        exporter = TrackExporter()
+        downloads = DownloadCenter(cache: environment.cache, exporter: exporter)
     }
 
     func start() {
@@ -41,6 +43,10 @@ final class AppCoordinator {
         observers.append(NotificationCenter.default.addObserver(forName: SessionStore.sessionDidChange, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             MainActor.assumeIsolated { self.sessionDidChange() }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: DownloadCenter.jobDidFinish, object: downloads, queue: .main) { [weak self] notification in
+            guard let self, let job = notification.userInfo?["job"] as? DownloadCenter.Job else { return }
+            MainActor.assumeIsolated { self.downloadDidFinish(job) }
         })
         Task { [cache = environment.cache] in
             await cache.reconcile()
@@ -91,13 +97,17 @@ final class AppCoordinator {
         let navigation = UINavigationController(rootViewController: root)
         autoCache = AutoCacheController(
             player: player,
-            cache: environment.cache,
+            downloads: downloads,
             cacheState: cacheState,
             settings: environment.settings,
             network: environment.network,
             userID: session.userID
         )
         bindPlayer(to: myMusic)
+        root.onDownloads = { [weak self, weak navigation] in
+            guard let self, let navigation else { return }
+            navigation.pushViewController(DownloadsViewController(center: downloads), animated: true)
+        }
         root.onSettings = { [weak self, weak navigation] in
             guard let self, let navigation else { return }
             let settings = SettingsViewController(settings: environment.settings, cache: environment.cache)
@@ -147,10 +157,25 @@ final class AppCoordinator {
         }
     }
 
+    private func showDownloads(from list: UIViewController) {
+        guard let navigation = list.navigationController ?? musicNavigation else { return }
+        if navigation.topViewController is DownloadsViewController {
+            return
+        }
+        navigation.pushViewController(DownloadsViewController(center: downloads), animated: true)
+    }
+
+    private func downloadDidFinish(_ job: DownloadCenter.Job) {
+        guard job.kind == .saveTo, case .done(let url) = job.state, let url, let presenter = window.rootViewController?.topmostPresentedViewController else { return }
+        DocumentExport.present(fileURL: url, from: presenter)
+    }
+
     private func signOut() {
         Log.app.info("sign out")
         player.stop()
         autoCache = nil
+        downloads.cancelAll()
+        downloads.clearFinished()
         Task { [library = environment.library, cache = environment.cache] in
             await cache.clear()
             try? await library.clear()
@@ -166,41 +191,26 @@ final class AppCoordinator {
         list.onPlayNext = { [player] track in player.playNext(track) }
         list.onAddToQueue = { [player] track in player.addToQueue(track) }
         list.isCached = { [cacheState] track in cacheState.isCached(track) }
-        list.onDownload = { [exporter] track, list in
-            list.showNotice("Downloading...")
-            Task {
-                do {
-                    let file = try await exporter.exportToMusicFolder(track)
-                    list.showNotice("Saved to Music/\(file.lastPathComponent)")
-                } catch {
-                    Log.cache.error("export \(track.storageID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-                    list.showError(error)
-                }
-            }
+        list.onDownload = { [weak self] track, list in
+            guard let self else { return }
+            downloads.enqueue(track, kind: .musicFolder)
+            showDownloads(from: list)
         }
-        list.onSaveTo = { [exporter] track, list in
-            list.showNotice("Downloading...")
-            Task {
-                do {
-                    let file = try await exporter.exportToTemporary(track)
-                    list.dismissNotice {
-                        DocumentExport.present(fileURL: file, from: list)
-                    }
-                } catch {
-                    Log.cache.error("export \(track.storageID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-                    list.showError(error)
-                }
-            }
+        list.onSaveTo = { [weak self] track, list in
+            guard let self else { return }
+            downloads.enqueue(track, kind: .saveTo)
+            showDownloads(from: list)
         }
-        list.onToggleCache = { [cacheState, cache = environment.cache] track in
+        list.onToggleCache = { [cacheState, downloads, cache = environment.cache] track in
             let cached = cacheState.isCached(track)
             Log.cache.info("\(cached ? "remove" : "save", privacy: .public) requested for \(track.storageID, privacy: .public)")
-            Task {
-                if cached {
+            if cached {
+                downloads.cancelCacheJobs(for: track)
+                Task {
                     await cache.remove(track)
-                } else {
-                    await cache.enqueue(track)
                 }
+            } else {
+                downloads.enqueue(track, kind: .cache)
             }
         }
     }
