@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 final class AppEnvironment {
     let sessionStore: SessionStore
@@ -6,7 +7,11 @@ final class AppEnvironment {
     let oauth: VKOAuthClient
     let authEndpoints: VKAuthEndpoints
     let authFlow: VKAuthFlow
-    let appearance: AppearanceSettings
+    let settings: AppSettings
+    let network: NetworkMonitor
+    let database: AppDatabase
+    let library: TrackLibrary
+    let audioAPI: AudioAPI
 
     init() {
         sessionStore = SessionStore(service: Bundle.main.bundleIdentifier ?? "VUnder")
@@ -17,6 +22,15 @@ final class AppEnvironment {
         oauth = VKOAuthClient(store: sessionStore)
         authEndpoints = VKAuthEndpoints(api: api)
         authFlow = VKAuthFlow(oauth: oauth, endpoints: authEndpoints, store: sessionStore)
-        appearance = AppearanceSettings()
+        settings = AppSettings()
+        network = NetworkMonitor()
+        do {
+            database = try AppDatabase(path: AppDatabase.defaultPath())
+        } catch {
+            Log.storage.fault("database open failed: \(error.localizedDescription, privacy: .public)")
+            fatalError("database open failed: \(error)")
+        }
+        library = TrackLibrary(database: database)
+        audioAPI = AudioAPI(api: api)
     }
 }

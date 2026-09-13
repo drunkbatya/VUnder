@@ -22,7 +22,7 @@ final class AppCoordinator {
         Task { [api = environment.api, challengePresenter] in
             await api.setChallengeHandler(challengePresenter)
         }
-        observers.append(NotificationCenter.default.addObserver(forName: AppearanceSettings.didChange, object: nil, queue: .main) { [weak self] _ in
+        observers.append(NotificationCenter.default.addObserver(forName: AppSettings.didChange, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             MainActor.assumeIsolated { self.applyAppearance() }
         })
@@ -32,7 +32,7 @@ final class AppCoordinator {
         })
         if let session = environment.sessionStore.session {
             Log.app.info("launch with session user_id=\(session.userID, privacy: .public)")
-            showHome(profile: nil)
+            showMusic()
         } else {
             Log.app.info("launch without session")
             showLogin()
@@ -41,7 +41,7 @@ final class AppCoordinator {
     }
 
     private func applyAppearance() {
-        let appearance = environment.appearance.current
+        let appearance = environment.settings.appearance
         Log.app.info("appearance \(appearance.rawValue, privacy: .public)")
         window.overrideUserInterfaceStyle = appearance.interfaceStyle
     }
@@ -55,19 +55,53 @@ final class AppCoordinator {
 
     private func showLogin() {
         let coordinator = LoginCoordinator(authFlow: environment.authFlow, challengePresenter: challengePresenter)
-        coordinator.onSignedIn = { [weak self] profile in
+        coordinator.onSignedIn = { [weak self] _ in
             self?.loginCoordinator = nil
-            self?.showHome(profile: profile)
+            self?.showMusic()
         }
         loginCoordinator = coordinator
         window.rootViewController = coordinator.navigationController
     }
 
-    private func showHome(profile: AccountProfile?) {
-        let home = HomeViewController(profile: profile)
-        home.onSignOut = { [weak self] in
-            self?.environment.sessionStore.clear()
+    private func showMusic() {
+        guard let session = environment.sessionStore.session else { return }
+        let myMusic = MyMusicViewController(
+            audioAPI: environment.audioAPI,
+            library: environment.library,
+            network: environment.network,
+            ownerID: session.userID
+        )
+        let general = GeneralViewController(settings: environment.settings)
+        let root = MusicRootViewController(myMusic: myMusic, general: general)
+        let navigation = UINavigationController(rootViewController: root)
+        myMusic.onSignOut = { [weak self] in
+            guard let self else { return }
+            Task { [library = environment.library] in
+                try? await library.clear()
+            }
+            environment.sessionStore.clear()
         }
-        window.rootViewController = UINavigationController(rootViewController: home)
+        general.onSelectRow = { [weak self, weak navigation] row in
+            guard let self, let navigation else { return }
+            navigation.pushViewController(makeGeneralScreen(row, userID: session.userID, navigation: navigation), animated: true)
+        }
+        window.rootViewController = navigation
+    }
+
+    private func makeGeneralScreen(_ row: GeneralViewController.Row, userID: Int64, navigation: UINavigationController) -> UIViewController {
+        switch row {
+        case .saved:
+            return StoredTracksViewController(library: environment.library, source: .saved)
+        case .listened:
+            return StoredTracksViewController(library: environment.library, source: .listened)
+        case .playlists:
+            let playlists = PlaylistsViewController(audioAPI: environment.audioAPI, network: environment.network, ownerID: userID)
+            playlists.onSelectPlaylist = { [weak self, weak navigation] playlist in
+                guard let self, let navigation else { return }
+                let tracks = PlaylistTracksViewController(audioAPI: environment.audioAPI, network: environment.network, playlist: playlist)
+                navigation.pushViewController(tracks, animated: true)
+            }
+            return playlists
+        }
     }
 }

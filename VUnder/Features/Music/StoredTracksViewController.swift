@@ -1,0 +1,66 @@
+import UIKit
+import os
+
+final class StoredTracksViewController: TrackListViewController {
+    enum Source {
+        case saved
+        case listened
+
+        var title: String {
+            switch self {
+            case .saved: return "Saved"
+            case .listened: return "Listened"
+            }
+        }
+
+        var emptyMessage: String {
+            switch self {
+            case .saved: return "No saved tracks"
+            case .listened: return "No listened tracks yet"
+            }
+        }
+    }
+
+    private let library: TrackLibrary
+    private let source: Source
+
+    init(library: TrackLibrary, source: Source) {
+        self.library = library
+        self.source = source
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
+
+    override var emptyMessage: String {
+        source.emptyMessage
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = source.title
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        reload()
+    }
+
+    private func reload() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                switch source {
+                case .saved: tracks = try await library.savedTracks()
+                case .listened: tracks = try await library.listenedTracks()
+                }
+            } catch {
+                Log.music.error("\(self.source.title, privacy: .public) load failed: \(error.localizedDescription, privacy: .public)")
+                showError(error)
+            }
+        }
+    }
+}
