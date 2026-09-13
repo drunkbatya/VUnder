@@ -6,6 +6,7 @@ final class TrackCell: UITableViewCell {
     private let titleLabel = UILabel()
     private let artistLabel = UILabel()
     private let durationLabel = UILabel()
+    private let cachedIcon = UIImageView(image: UIImage(systemName: "arrow.down.circle.fill"))
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -22,7 +23,11 @@ final class TrackCell: UITableViewCell {
         let textStack = UIStackView(arrangedSubviews: [titleLabel, artistLabel])
         textStack.axis = .vertical
         textStack.spacing = 2
-        let rowStack = UIStackView(arrangedSubviews: [textStack, durationLabel])
+        cachedIcon.tintColor = Theme.secondaryText
+        cachedIcon.contentMode = .scaleAspectFit
+        cachedIcon.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        cachedIcon.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        let rowStack = UIStackView(arrangedSubviews: [textStack, cachedIcon, durationLabel])
         rowStack.axis = .horizontal
         rowStack.alignment = .center
         rowStack.spacing = 12
@@ -41,7 +46,8 @@ final class TrackCell: UITableViewCell {
         fatalError()
     }
 
-    func configure(with track: Track, isCurrent: Bool) {
+    func configure(with track: Track, isCurrent: Bool, isCached: Bool) {
+        cachedIcon.isHidden = !isCached
         titleLabel.text = track.title
         artistLabel.text = track.artist
         durationLabel.text = track.formattedDuration

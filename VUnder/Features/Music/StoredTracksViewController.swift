@@ -23,6 +23,7 @@ final class StoredTracksViewController: TrackListViewController {
 
     private let library: TrackLibrary
     private let source: Source
+    private var cacheObserver: NSObjectProtocol?
 
     init(library: TrackLibrary, source: Source) {
         self.library = library
@@ -42,6 +43,12 @@ final class StoredTracksViewController: TrackListViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = source.title
+        if source == .saved {
+            cacheObserver = NotificationCenter.default.addObserver(forName: CacheState.didChange, object: nil, queue: .main) { [weak self] _ in
+                guard let self else { return }
+                MainActor.assumeIsolated { self.reload() }
+            }
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {

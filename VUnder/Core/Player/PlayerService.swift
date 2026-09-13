@@ -17,6 +17,7 @@ final class PlayerService {
     private let audioAPI: AudioAPI
     private let library: TrackLibrary
     private let settings: AppSettings
+    private let network: NetworkMonitor
     private let player = AVPlayer()
     private var nowPlaying: NowPlayingCenter?
     private var statusObservation: NSKeyValueObservation?
@@ -27,10 +28,11 @@ final class PlayerService {
     private var retriedFreshURL = false
     private var listenRecorded = false
 
-    init(audioAPI: AudioAPI, library: TrackLibrary, settings: AppSettings) {
+    init(audioAPI: AudioAPI, library: TrackLibrary, settings: AppSettings, network: NetworkMonitor) {
         self.audioAPI = audioAPI
         self.library = library
         self.settings = settings
+        self.network = network
         player.automaticallyWaitsToMinimizeStalling = true
         nowPlaying = NowPlayingCenter(player: self)
         observePlayer()
@@ -138,15 +140,37 @@ final class PlayerService {
             } catch {
                 guard !Task.isCancelled else { return }
                 Log.player.error("url resolve failed for \(track.fullID, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                setState(.paused)
+                if error is OfflineError {
+                    nextCached()
+                } else {
+                    setState(.paused)
+                }
             }
         }
+    }
+
+    private func nextCached() {
+        guard let index = currentIndex, let locator = localFileURL else {
+            stop()
+            return
+        }
+        guard let nextIndex = queue.indices.dropFirst(index + 1).first(where: { locator(queue[$0]) != nil }) else {
+            Log.player.info("no cached tracks ahead in queue, stopping")
+            stop()
+            return
+        }
+        Log.player.info("offline, skipping to cached track at \(nextIndex, privacy: .public)")
+        currentIndex = nextIndex
+        startCurrent()
     }
 
     private func resolveURL(for track: Track) async throws -> URL? {
         if let local = localFileURL?(track) {
             Log.player.info("playing local file for \(track.fullID, privacy: .public)")
             return local
+        }
+        guard network.isConnected else {
+            throw OfflineError()
         }
         if let url = track.url, let remote = URL(string: url) {
             return remote
@@ -213,6 +237,10 @@ final class PlayerService {
 
     private func playbackFailed(track: Track, error: Error?) {
         Log.player.error("playback failed \(track.fullID, privacy: .public): \(error?.localizedDescription ?? "unknown", privacy: .public)")
+        guard network.isConnected else {
+            nextCached()
+            return
+        }
         guard !retriedFreshURL else {
             next()
             return

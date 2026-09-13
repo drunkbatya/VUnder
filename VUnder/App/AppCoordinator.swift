@@ -7,6 +7,8 @@ final class AppCoordinator {
     private let environment: AppEnvironment
     private let challengePresenter: ChallengePresenter
     private let player: PlayerService
+    private let cacheState = CacheState()
+    private var autoCache: AutoCacheController?
     private var loginCoordinator: LoginCoordinator?
     private var observers: [NSObjectProtocol] = []
 
@@ -16,7 +18,8 @@ final class AppCoordinator {
         challengePresenter = ChallengePresenter(presentingViewController: { [weak window] in
             window?.rootViewController?.topmostPresentedViewController
         })
-        player = PlayerService(audioAPI: environment.audioAPI, library: environment.library, settings: environment.settings)
+        player = PlayerService(audioAPI: environment.audioAPI, library: environment.library, settings: environment.settings, network: environment.network)
+        player.localFileURL = { [cache = environment.cache] track in cache.localFileURL(for: track) }
     }
 
     func start() {
@@ -32,6 +35,9 @@ final class AppCoordinator {
             guard let self else { return }
             MainActor.assumeIsolated { self.sessionDidChange() }
         })
+        Task { [cache = environment.cache] in
+            await cache.reconcile()
+        }
         if let session = environment.sessionStore.session {
             Log.app.info("launch with session user_id=\(session.userID, privacy: .public)")
             showMusic()
@@ -76,11 +82,21 @@ final class AppCoordinator {
         let general = GeneralViewController(settings: environment.settings)
         let root = MusicRootViewController(myMusic: myMusic, general: general)
         let navigation = UINavigationController(rootViewController: root)
+        autoCache = AutoCacheController(
+            player: player,
+            cache: environment.cache,
+            cacheState: cacheState,
+            settings: environment.settings,
+            network: environment.network,
+            userID: session.userID
+        )
         bindPlayer(to: myMusic)
         myMusic.onSignOut = { [weak self] in
             guard let self else { return }
             player.stop()
-            Task { [library = environment.library] in
+            autoCache = nil
+            Task { [library = environment.library, cache = environment.cache] in
+                await cache.clear()
                 try? await library.clear()
             }
             environment.sessionStore.clear()
@@ -96,6 +112,18 @@ final class AppCoordinator {
         list.currentTrack = { [player] in player.current }
         list.onSelectTrack = { [player] track, queue in
             player.play(track, in: queue)
+        }
+        list.isCached = { [cacheState] track in cacheState.isCached(track) }
+        list.onToggleCache = { [cacheState, cache = environment.cache] track in
+            let cached = cacheState.isCached(track)
+            Log.cache.info("\(cached ? "remove" : "save", privacy: .public) requested for \(track.storageID, privacy: .public)")
+            Task {
+                if cached {
+                    await cache.remove(track)
+                } else {
+                    await cache.enqueue(track)
+                }
+            }
         }
     }
 

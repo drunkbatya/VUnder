@@ -56,6 +56,32 @@ final class TrackLibrary: Sendable {
         Log.storage.info("library replaced with \(tracks.count, privacy: .public) tracks")
     }
 
+    func track(storageID: String) async throws -> Track? {
+        let parts = storageID.split(separator: "_")
+        guard parts.count == 2, let ownerID = Int64(parts[0]), let id = Int64(parts[1]) else { return nil }
+        return try await database.queue.read { db in
+            try Track.fetchOne(db, key: ["ownerID": ownerID, "id": id])
+        }
+    }
+
+    func cachedTrackIDs() async throws -> Set<String> {
+        try await database.queue.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT ownerID, id FROM track WHERE cachedAt IS NOT NULL")
+            return Set(rows.map { "\($0["ownerID"] as Int64)_\($0["id"] as Int64)" })
+        }
+    }
+
+    func markCached(_ track: Track, at date: Date?) async throws {
+        try await database.queue.write { db in
+            var stored = try Track.fetchOne(db, key: ["ownerID": track.ownerID, "id": track.id]) ?? track
+            stored.cachedAt = date
+            try stored.save(db)
+            if date == nil {
+                try TrackLibrary.deleteOrphans(db)
+            }
+        }
+    }
+
     func recordListen(_ track: Track) async throws {
         try await database.queue.write { db in
             if try Track.fetchOne(db, key: ["ownerID": track.ownerID, "id": track.id]) == nil {

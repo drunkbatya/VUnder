@@ -22,6 +22,10 @@ struct Track: Codable, Equatable, Sendable, FetchableRecord, PersistableRecord {
         static let cachedAt = Column(CodingKeys.cachedAt)
     }
 
+    var storageID: String {
+        "\(ownerID)_\(id)"
+    }
+
     var fullID: String {
         let base = "\(ownerID)_\(id)"
         guard let accessKey, !accessKey.isEmpty else { return base }

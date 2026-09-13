@@ -12,6 +12,7 @@ final class AppEnvironment {
     let database: AppDatabase
     let library: TrackLibrary
     let audioAPI: AudioAPI
+    let cache: AudioCache
 
     init() {
         sessionStore = SessionStore(service: Bundle.main.bundleIdentifier ?? "VUnder")
@@ -32,5 +33,11 @@ final class AppEnvironment {
         }
         library = TrackLibrary(database: database)
         audioAPI = AudioAPI(api: api)
+        do {
+            cache = try AudioCache(library: library)
+        } catch {
+            Log.cache.fault("cache directory setup failed: \(error.localizedDescription, privacy: .public)")
+            fatalError("cache directory setup failed: \(error)")
+        }
     }
 }

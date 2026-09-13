@@ -8,6 +8,7 @@ struct TrackSection {
 class TrackListViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
     let tableView = UITableView(frame: .zero, style: .plain)
     let emptyLabel = FormControls.bodyLabel("")
+    private var tableTop: NSLayoutConstraint?
 
     var sections: [TrackSection] = [] {
         didSet {
@@ -23,13 +24,17 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
 
     var onSelectTrack: ((Track, [Track]) -> Void)?
     var currentTrack: (() -> Track?)?
-    private var playerObserver: NSObjectProtocol?
+    var isCached: ((Track) -> Bool)?
+    var onToggleCache: ((Track) -> Void)?
+    private var observers: [NSObjectProtocol] = []
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        playerObserver = NotificationCenter.default.addObserver(forName: PlayerService.stateDidChange, object: nil, queue: .main) { [weak self] _ in
-            guard let self else { return }
-            MainActor.assumeIsolated { self.refreshVisibleRows() }
+        for name in [PlayerService.stateDidChange, CacheState.didChange] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                guard let self else { return }
+                MainActor.assumeIsolated { self.refreshVisibleRows() }
+            })
         }
         view.backgroundColor = Theme.background
         tableView.backgroundColor = Theme.background
@@ -43,8 +48,10 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
         view.addSubview(tableView)
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyLabel)
+        let top = tableView.topAnchor.constraint(equalTo: view.topAnchor)
+        tableTop = top
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.topAnchor),
+            top,
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -58,6 +65,30 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
 
     var emptyMessage: String {
         ""
+    }
+
+    func pinAboveTable(_ header: UIView) {
+        header.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(header)
+        tableTop?.isActive = false
+        let top = tableView.topAnchor.constraint(equalTo: header.bottomAnchor)
+        tableTop = top
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            header.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            top,
+        ])
+        tableView.contentInsetAdjustmentBehavior = .never
+        tableView.contentInset.bottom = view.safeAreaInsets.bottom
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        if tableView.contentInsetAdjustmentBehavior == .never {
+            tableView.contentInset.bottom = view.safeAreaInsets.bottom
+            tableView.verticalScrollIndicatorInsets.bottom = view.safeAreaInsets.bottom
+        }
     }
 
     func updateEmptyState() {
@@ -94,7 +125,7 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: TrackCell.reuseIdentifier, for: indexPath) as! TrackCell
         let track = sections[indexPath.section].tracks[indexPath.row]
-        cell.configure(with: track, isCurrent: track.isSame(as: currentTrack?()))
+        cell.configure(with: track, isCurrent: track.isSame(as: currentTrack?()), isCached: isCached?(track) ?? false)
         return cell
     }
 
@@ -102,6 +133,22 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
         tableView.deselectRow(at: indexPath, animated: true)
         let section = sections[indexPath.section]
         onSelectTrack?(section.tracks[indexPath.row], section.tracks)
+    }
+
+    func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        guard let onToggleCache else { return nil }
+        let track = sections[indexPath.section].tracks[indexPath.row]
+        let cached = isCached?(track) ?? false
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            let action = UIAction(
+                title: cached ? "Remove from saved" : "Save offline",
+                image: UIImage(systemName: cached ? "trash" : "arrow.down.circle"),
+                attributes: cached ? [.destructive] : []
+            ) { _ in
+                onToggleCache(track)
+            }
+            return UIMenu(children: [action])
+        }
     }
 
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
@@ -118,7 +165,7 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
         for indexPath in tableView.indexPathsForVisibleRows ?? [] {
             guard let cell = tableView.cellForRow(at: indexPath) as? TrackCell else { continue }
             let track = sections[indexPath.section].tracks[indexPath.row]
-            cell.configure(with: track, isCurrent: track.isSame(as: currentTrack?()))
+            cell.configure(with: track, isCurrent: track.isSame(as: currentTrack?()), isCached: isCached?(track) ?? false)
         }
     }
 }

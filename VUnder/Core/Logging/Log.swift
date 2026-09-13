@@ -11,6 +11,7 @@ enum Log {
     static let storage = Logger(subsystem: subsystem, category: "storage")
     static let music = Logger(subsystem: subsystem, category: "music")
     static let player = Logger(subsystem: subsystem, category: "player")
+    static let cache = Logger(subsystem: subsystem, category: "cache")
 }
 
 enum LogRedaction {

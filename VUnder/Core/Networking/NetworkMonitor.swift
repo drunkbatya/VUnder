@@ -8,6 +8,7 @@ final class NetworkMonitor: @unchecked Sendable {
     private let monitor = NWPathMonitor()
     private let lock = NSLock()
     private var connected = true
+    private var expensive = false
 
     init() {
         monitor.pathUpdateHandler = { [weak self] path in
@@ -16,6 +17,7 @@ final class NetworkMonitor: @unchecked Sendable {
             lock.lock()
             let changed = connected != isConnected
             connected = isConnected
+            expensive = path.isExpensive
             lock.unlock()
             if changed {
                 Log.app.info("network \(isConnected ? "reachable" : "unreachable", privacy: .public)")
@@ -29,6 +31,12 @@ final class NetworkMonitor: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return connected
+    }
+
+    var isExpensive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return expensive
     }
 }
 

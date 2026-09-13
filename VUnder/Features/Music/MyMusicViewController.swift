@@ -51,8 +51,8 @@ final class MyMusicViewController: TrackListViewController, UISearchBarDelegate 
         searchBar.autocapitalizationType = .none
         searchBar.returnKeyType = .search
         searchBar.searchBarStyle = .minimal
-        searchBar.sizeToFit()
-        tableView.tableHeaderView = searchBar
+        searchBar.backgroundColor = Theme.background
+        pinAboveTable(searchBar)
         refreshControl.addTarget(self, action: #selector(refresh), for: .valueChanged)
         tableView.refreshControl = refreshControl
         countLabel.frame = CGRect(x: 0, y: 0, width: 0, height: 44)

@@ -28,13 +28,15 @@ final class AppSettings {
     private enum Key {
         static let appearance = "appearance"
         static let historyEnabled = "history_enabled"
+        static let cacheEnabled = "cache_enabled"
+        static let cacheOnlyMine = "cache_only_mine"
     }
 
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        defaults.register(defaults: [Key.historyEnabled: true])
+        defaults.register(defaults: [Key.historyEnabled: true, Key.cacheEnabled: true, Key.cacheOnlyMine: true])
     }
 
     var appearance: Appearance {
@@ -45,6 +47,16 @@ final class AppSettings {
     var historyEnabled: Bool {
         get { defaults.bool(forKey: Key.historyEnabled) }
         set { update(Key.historyEnabled, newValue) }
+    }
+
+    var cacheEnabled: Bool {
+        get { defaults.bool(forKey: Key.cacheEnabled) }
+        set { update(Key.cacheEnabled, newValue) }
+    }
+
+    var cacheOnlyMine: Bool {
+        get { defaults.bool(forKey: Key.cacheOnlyMine) }
+        set { update(Key.cacheOnlyMine, newValue) }
     }
 
     private func update(_ key: String, _ value: Any) {
