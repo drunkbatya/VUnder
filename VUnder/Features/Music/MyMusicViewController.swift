@@ -17,6 +17,7 @@ final class MyMusicViewController: TrackListViewController, UISearchBarDelegate 
     private var globalTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var revealAfterSearch: Track?
+    private var libraryObserver: NSObjectProtocol?
 
     init(audioAPI: AudioAPI, library: TrackLibrary, network: NetworkMonitor, ownerID: Int64) {
         self.audioAPI = audioAPI
@@ -55,7 +56,22 @@ final class MyMusicViewController: TrackListViewController, UISearchBarDelegate 
         tableView.refreshControl = refreshControl
         countLabel.frame = CGRect(x: 0, y: 0, width: 0, height: 44)
         tableView.tableFooterView = countLabel
+        libraryObserver = NotificationCenter.default.addObserver(forName: LibraryEditor.didChange, object: nil, queue: .main) { [weak self] notification in
+            guard let self else { return }
+            MainActor.assumeIsolated { self.libraryDidChange(notification) }
+        }
         loadSavedTracks()
+    }
+
+    private func libraryDidChange(_ notification: Notification) {
+        if let added = notification.userInfo?["added"] as? Track {
+            libraryTracks.removeAll { $0.isSame(as: added) }
+            libraryTracks.insert(added, at: 0)
+        }
+        if let removed = notification.userInfo?["removed"] as? Track {
+            libraryTracks.removeAll { $0.isSame(as: removed) }
+        }
+        rebuildSections()
     }
 
     private func loadSavedTracks() {

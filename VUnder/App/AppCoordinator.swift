@@ -17,6 +17,7 @@ final class AppCoordinator {
     private weak var musicRoot: MusicRootViewController?
     private weak var myMusic: MyMusicViewController?
     private var recommendations: RecommendationsViewController?
+    private var libraryEditor: LibraryEditor?
     private var observers: [NSObjectProtocol] = []
 
     init(window: UIWindow, environment: AppEnvironment) {
@@ -27,6 +28,7 @@ final class AppCoordinator {
         })
         player = PlayerService(audioAPI: environment.audioAPI, library: environment.library, settings: environment.settings, network: environment.network)
         player.localFileURL = { [cache = environment.cache] track in cache.localFileURL(for: track) }
+        ImageLoader.shared.localCoverURL = { [cache = environment.cache] track in cache.localCoverURL(for: track) }
         fileInfoProvider = TrackFileInfoProvider(localFileURL: { [cache = environment.cache] track in cache.localFileURL(for: track) })
         exporter = TrackExporter()
         downloads = DownloadCenter(cache: environment.cache, exporter: exporter)
@@ -88,6 +90,8 @@ final class AppCoordinator {
     private func showMusic() {
         guard let session = environment.sessionStore.session else { return }
         recommendations = nil
+        let editor = LibraryEditor(userID: session.userID, audioAPI: environment.audioAPI, library: environment.library, player: player)
+        libraryEditor = editor
         let myMusic = MyMusicViewController(
             audioAPI: environment.audioAPI,
             library: environment.library,
@@ -126,6 +130,10 @@ final class AppCoordinator {
         let container = PlayerContainerViewController(content: navigation, player: player, fileInfoProvider: fileInfoProvider)
         container.onJumpToTrack = { [weak self] track, source in
             self?.jump(to: track, source: source)
+        }
+        container.isMine = { [editor] track in editor.isMine(track) }
+        container.onToggleLibrary = { [weak self] track, mine, screen in
+            self?.editLibrary(track, delete: mine, notice: screen.showNotice, failure: screen.showError)
         }
         window.rootViewController = container
     }
@@ -185,6 +193,7 @@ final class AppCoordinator {
         player.stop()
         autoCache = nil
         recommendations = nil
+        libraryEditor = nil
         downloads.cancelAll()
         downloads.clearFinished()
         Task { [library = environment.library, cache = environment.cache] in
@@ -207,6 +216,13 @@ final class AppCoordinator {
             navigation.pushViewController(similar, animated: true)
         }
         list.onAddToQueue = { [player] track in player.addToQueue(track) }
+        list.isMine = { [weak self] track in self?.libraryEditor?.isMine(track) ?? false }
+        list.onAddToLibrary = { [weak self] track, list in
+            self?.editLibrary(track, delete: false, notice: list.showNotice, failure: list.showError)
+        }
+        list.onDeleteFromLibrary = { [weak self] track, list in
+            self?.editLibrary(track, delete: true, notice: list.showNotice, failure: list.showError)
+        }
         list.isCached = { [cacheState] track in cacheState.isCached(track) }
         list.onDownload = { [weak self] track, list in
             guard let self else { return }
@@ -228,6 +244,28 @@ final class AppCoordinator {
                 }
             } else {
                 downloads.enqueue(track, kind: .cache)
+            }
+        }
+    }
+
+    private func editLibrary(_ track: Track, delete: Bool, notice: @escaping @MainActor (String) -> Void, failure: @escaping @MainActor (Error) -> Void) {
+        guard let editor = libraryEditor else { return }
+        guard environment.network.isConnected else {
+            notice("No internet connection")
+            return
+        }
+        Task {
+            do {
+                if delete {
+                    try await editor.delete(track)
+                    notice("Deleted from my music")
+                } else {
+                    _ = try await editor.add(track)
+                    notice("Added to my music")
+                }
+            } catch {
+                Log.music.error("\(delete ? "delete" : "add", privacy: .public) \(track.fullID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                failure(error)
             }
         }
     }

@@ -56,6 +56,26 @@ final class TrackLibrary: Sendable {
         Log.storage.info("library replaced with \(tracks.count, privacy: .public) tracks")
     }
 
+    func insertAtTop(_ track: Track) async throws {
+        try await database.queue.write { db in
+            try db.execute(sql: "UPDATE track SET libraryPosition = libraryPosition + 1 WHERE libraryPosition IS NOT NULL")
+            var stored = try Track.fetchOne(db, key: ["ownerID": track.ownerID, "id": track.id]) ?? track
+            stored.libraryPosition = 0
+            try stored.save(db)
+        }
+        Log.storage.info("library insert at top \(track.storageID, privacy: .public)")
+    }
+
+    func removeFromLibrary(_ track: Track) async throws {
+        try await database.queue.write { db in
+            guard var stored = try Track.fetchOne(db, key: ["ownerID": track.ownerID, "id": track.id]) else { return }
+            stored.libraryPosition = nil
+            try stored.save(db)
+            try TrackLibrary.deleteOrphans(db)
+        }
+        Log.storage.info("library remove \(track.storageID, privacy: .public)")
+    }
+
     func track(storageID: String) async throws -> Track? {
         let parts = storageID.split(separator: "_")
         guard parts.count == 2, let ownerID = Int64(parts[0]), let id = Int64(parts[1]) else { return nil }

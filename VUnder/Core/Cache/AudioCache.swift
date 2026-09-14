@@ -36,6 +36,15 @@ actor AudioCache {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    nonisolated func coverFileURL(for track: Track) -> URL {
+        directory.appendingPathComponent("\(track.ownerID)_\(track.id).jpg")
+    }
+
+    nonisolated func localCoverURL(for track: Track) -> URL? {
+        let url = coverFileURL(for: track)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
     func isCached(_ track: Track) -> Bool {
         cachedIDs.contains(track.storageID)
     }
@@ -59,6 +68,9 @@ actor AudioCache {
                 try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(id).mp3"))
             }
             cachedIDs = marked.intersection(present)
+            for cover in files where cover.hasSuffix(".jpg") && !cachedIDs.contains(String(cover.dropLast(4))) {
+                try? FileManager.default.removeItem(at: directory.appendingPathComponent(cover))
+            }
             Log.cache.info("reconciled cached=\(self.cachedIDs.count, privacy: .public)")
             notify()
         } catch {
@@ -119,10 +131,29 @@ actor AudioCache {
         let size = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         Log.cache.info("installed \(track.storageID, privacy: .public) \(size, privacy: .public) bytes")
         notify()
+        await storeCover(for: track)
+    }
+
+    private func storeCover(for track: Track) async {
+        guard let urlString = track.coverURL, let url = URL(string: urlString) else { return }
+        let destination = coverFileURL(for: track)
+        guard !FileManager.default.fileExists(atPath: destination.path) else { return }
+        var request = URLRequest(url: url)
+        request.setValue(VKClientIdentity.userAgent(.general), forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200, !data.isEmpty else { throw DownloadError.httpStatus(track.storageID, status) }
+            try data.write(to: destination, options: .atomic)
+            Log.cache.info("cover stored for \(track.storageID, privacy: .public) \(data.count, privacy: .public) bytes")
+        } catch {
+            Log.cache.error("cover for \(track.storageID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func remove(_ track: Track) async {
         try? FileManager.default.removeItem(at: fileURL(for: track))
+        try? FileManager.default.removeItem(at: coverFileURL(for: track))
         cachedIDs.remove(track.storageID)
         do {
             try await library.markCached(track, at: nil)

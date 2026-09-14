@@ -126,6 +126,17 @@ final class PlayerService {
         NotificationCenter.default.post(name: PlayerService.stateDidChange, object: self)
     }
 
+    func replace(_ track: Track, with replacement: Track) {
+        var replaced = false
+        for index in queue.indices where queue[index].isSame(as: track) {
+            queue[index] = replacement
+            replaced = true
+        }
+        guard replaced else { return }
+        Log.player.info("queue replace \(track.storageID, privacy: .public) -> \(replacement.storageID, privacy: .public)")
+        NotificationCenter.default.post(name: PlayerService.stateDidChange, object: self)
+    }
+
     func toggleShuffle() {
         settings.shuffle.toggle()
         rebuildOrder()

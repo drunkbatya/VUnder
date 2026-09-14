@@ -132,6 +132,30 @@ final class AudioAPI: Sendable {
         return Recommendations(tracks: tracks, personal: personal)
     }
 
+    func add(_ track: Track) async throws -> Int64 {
+        var parameters: [(String, String)] = [
+            ("owner_id", String(track.ownerID)),
+            ("audio_id", String(track.id)),
+        ]
+        if let accessKey = track.accessKey {
+            parameters.append(("access_key", accessKey))
+        }
+        let json = try await audioCall("audio.add", parameters: parameters)
+        guard let newID = (json.raw["response"] as? NSNumber)?.int64Value, newID > 0 else {
+            throw VKAPIError.malformedResponse(method: "audio.add")
+        }
+        Log.music.info("added \(track.fullID, privacy: .public) as \(newID, privacy: .public)")
+        return newID
+    }
+
+    func delete(_ track: Track) async throws {
+        _ = try await audioCall("audio.delete", parameters: [
+            ("owner_id", String(track.ownerID)),
+            ("audio_id", String(track.id)),
+        ])
+        Log.music.info("deleted \(track.storageID, privacy: .public)")
+    }
+
     func freshURL(for track: Track) async throws -> String? {
         let json = try await audioCall("audio.getById", parameters: [("audios", track.fullID)])
         let items = (json.raw["response"] as? [[String: Any]])?.map(JSONObject.init) ?? []

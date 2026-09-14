@@ -18,6 +18,9 @@ final class PlayerViewController: UIViewController {
     private let repeatButton = UIButton(type: .system)
     private let queueButton = UIButton(type: .system)
     private let jumpButton = UIButton(type: .system)
+    private let libraryButton = UIButton(type: .system)
+    var isMine: ((Track) -> Bool)?
+    var onToggleLibrary: ((Track, Bool, PlayerViewController) -> Void)?
     private var observers: [NSObjectProtocol] = []
     private var artworkTask: Task<Void, Never>?
     private var shownTrack: Track?
@@ -91,12 +94,13 @@ final class PlayerViewController: UIViewController {
         queueButton.addTarget(self, action: #selector(openQueue), for: .touchUpInside)
         jumpButton.setImage(UIImage(systemName: "arrow.turn.up.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
         jumpButton.addTarget(self, action: #selector(jumpToTrack), for: .touchUpInside)
-        for button in [shuffleButton, repeatButton, queueButton, jumpButton] {
-            button.widthAnchor.constraint(equalToConstant: 56).isActive = true
+        libraryButton.addTarget(self, action: #selector(toggleLibrary), for: .touchUpInside)
+        for button in [shuffleButton, repeatButton, queueButton, jumpButton, libraryButton] {
+            button.widthAnchor.constraint(equalToConstant: 48).isActive = true
             button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         }
-        let modes = UIStackView(arrangedSubviews: [shuffleButton, repeatButton, queueButton, jumpButton])
-        modes.spacing = 24
+        let modes = UIStackView(arrangedSubviews: [shuffleButton, repeatButton, queueButton, jumpButton, libraryButton])
+        modes.spacing = 12
         let modesRow = UIView()
         modes.translatesAutoresizingMaskIntoConstraints = false
         modesRow.addSubview(modes)
@@ -155,6 +159,37 @@ final class PlayerViewController: UIViewController {
         queueButton.tintColor = Theme.secondaryText
         jumpButton.tintColor = Theme.secondaryText
         jumpButton.isEnabled = player.source != nil
+        let mine = isMine?(track) ?? false
+        libraryButton.setImage(UIImage(systemName: mine ? "minus.circle" : "plus.circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
+        libraryButton.tintColor = Theme.secondaryText
+        libraryButton.isHidden = isMine == nil || (!mine && !track.isAvailable)
+    }
+
+    @objc private func toggleLibrary() {
+        guard let track = player.current, let isMine else { return }
+        if isMine(track) {
+            DeleteConfirmation.present(track: track, from: self) { [weak self] in
+                guard let self else { return }
+                onToggleLibrary?(track, true, self)
+            }
+        } else {
+            onToggleLibrary?(track, false, self)
+        }
+    }
+
+    func showNotice(_ message: String) {
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        present(alert, animated: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak alert] in
+            guard let alert, alert.presentingViewController != nil else { return }
+            alert.dismiss(animated: true)
+        }
+    }
+
+    func showError(_ error: Error) {
+        let alert = UIAlertController(title: "Error", message: error.localizedDescription, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 
     @objc private func openQueue() {
@@ -177,9 +212,8 @@ final class PlayerViewController: UIViewController {
     private func loadArtwork(_ track: Track) {
         artworkTask?.cancel()
         artworkView.image = UIImage(systemName: "music.note")
-        guard let url = track.coverURL.flatMap(URL.init) else { return }
         artworkTask = Task { [weak self] in
-            let image = await ImageLoader.shared.image(for: url)
+            let image = await ImageLoader.shared.cover(for: track)
             guard let self, !Task.isCancelled, shownTrack == track, let image else { return }
             artworkView.image = image
         }

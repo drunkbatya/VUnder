@@ -23,9 +23,8 @@ final class NowPlayingCenter {
         }
         artworkTrack = track
         update()
-        guard let cover = track.coverURL.flatMap(URL.init) else { return }
         artworkTask = Task { [weak self] in
-            guard let image = await ImageLoader.shared.image(for: cover), !Task.isCancelled else { return }
+            guard let image = await ImageLoader.shared.cover(for: track), !Task.isCancelled else { return }
             guard let self, artworkTrack == track else { return }
             artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             update()
