@@ -6,6 +6,11 @@ struct TrackPage {
     let total: Int
 }
 
+struct Recommendations {
+    let tracks: [Track]
+    let personal: Bool
+}
+
 final class AudioAPI: Sendable {
     static let libraryPageSize = 1000
     static let searchPageSize = 200
@@ -89,6 +94,42 @@ final class AudioAPI: Sendable {
         let tracks = response.objects("items").compactMap(Track.init(json:))
         Log.music.info("search '\(query, privacy: .public)' offset=\(offset, privacy: .public) items=\(tracks.count, privacy: .public)")
         return tracks
+    }
+
+    func recommendations(userID: Int64) async throws -> Recommendations {
+        let personal = try await audioResponse("audio.getRecommendations", parameters: [
+            ("user_id", String(userID)),
+            ("count", "200"),
+        ]).objects("items").compactMap(Track.init(json:))
+        Log.music.info("recommendations loaded user=\(userID, privacy: .public) items=\(personal.count, privacy: .public)")
+        if !personal.isEmpty {
+            return Recommendations(tracks: personal, personal: true)
+        }
+        let general = try await audioResponse("audio.get", parameters: [
+            ("owner_id", String(userID)),
+            ("playlist_id", "-21"),
+            ("count", "2000"),
+        ]).objects("items").compactMap(Track.init(json:))
+        Log.music.info("recommendations fallback playlist -21 items=\(general.count, privacy: .public)")
+        return Recommendations(tracks: general, personal: false)
+    }
+
+    func similar(to track: Track) async throws -> Recommendations {
+        var code = "var a="
+        if !track.isAvailable {
+            code += "API.audio.search({q:\"\(track.searchQuery)\",count:3}).items+"
+        }
+        code += "API.audio.getRecommendations({target_audio:\"\(track.fullID)\",count:200}).items;"
+        code += "if(a)return{items:a};"
+        code += "return{shuffle:1,items:API.audio.search({q:\"\(track.artistQuery)\",count:50}).items};"
+        let response = try await audioResponse("execute", parameters: [("code", code)])
+        var tracks = response.objects("items").compactMap(Track.init(json:))
+        let personal = !response.has("shuffle")
+        if !personal {
+            tracks.shuffle()
+        }
+        Log.music.info("similar to \(track.fullID, privacy: .public) items=\(tracks.count, privacy: .public) fallback=\(!personal, privacy: .public)")
+        return Recommendations(tracks: tracks, personal: personal)
     }
 
     func freshURL(for track: Track) async throws -> String? {

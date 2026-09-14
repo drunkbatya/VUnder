@@ -37,6 +37,7 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
     var onToggleCache: ((Track) -> Void)?
     var onDownload: ((Track, TrackListViewController) -> Void)?
     var onSaveTo: ((Track, TrackListViewController) -> Void)?
+    var onShowSimilar: ((Track, TrackListViewController) -> Void)?
     private var pendingReveal: Track?
     private var observers: [NSObjectProtocol] = []
 
@@ -199,6 +200,12 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
             }
             if let onAddToQueue = self?.onAddToQueue {
                 actions.append(UIAction(title: "Add to queue", image: UIImage(systemName: "text.append")) { _ in onAddToQueue(track) })
+            }
+            if let self, let onShowSimilar = onShowSimilar {
+                actions.append(UIAction(title: "Show similar", image: UIImage(systemName: "music.note.list")) { [weak self] _ in
+                    guard let self else { return }
+                    onShowSimilar(track, self)
+                })
             }
             if let onToggleCache = self?.onToggleCache {
                 actions.append(UIAction(

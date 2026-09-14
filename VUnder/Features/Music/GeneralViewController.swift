@@ -4,12 +4,14 @@ final class GeneralViewController: UITableViewController {
     enum Row: CaseIterable {
         case saved
         case playlists
+        case recommendations
         case listened
 
         var title: String {
             switch self {
             case .saved: return "Saved"
             case .playlists: return "Playlists"
+            case .recommendations: return "Recommendations"
             case .listened: return "Listened"
             }
         }

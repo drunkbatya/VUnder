@@ -16,6 +16,7 @@ final class AppCoordinator {
     private weak var musicNavigation: UINavigationController?
     private weak var musicRoot: MusicRootViewController?
     private weak var myMusic: MyMusicViewController?
+    private var recommendations: RecommendationsViewController?
     private var observers: [NSObjectProtocol] = []
 
     init(window: UIWindow, environment: AppEnvironment) {
@@ -86,6 +87,7 @@ final class AppCoordinator {
 
     private func showMusic() {
         guard let session = environment.sessionStore.session else { return }
+        recommendations = nil
         let myMusic = MyMusicViewController(
             audioAPI: environment.audioAPI,
             library: environment.library,
@@ -140,18 +142,26 @@ final class AppCoordinator {
         case .search(let query):
             root.select(0)
             myMusic.revealInSearch(query: query, track: track)
-        case .saved, .listened, .playlist:
+        case .saved, .listened, .playlist, .recommendations, .similar:
             root.select(1)
             let screen: TrackListViewController
             switch source {
             case .playlist(let playlist):
                 screen = PlaylistTracksViewController(audioAPI: environment.audioAPI, network: environment.network, playlist: playlist)
+                bindPlayer(to: screen)
             case .listened:
                 screen = StoredTracksViewController(library: environment.library, source: .listened)
+                bindPlayer(to: screen)
+            case .recommendations:
+                guard let userID = environment.sessionStore.session?.userID else { return }
+                screen = recommendationsScreen(userID: userID)
+            case .similar(let seed):
+                screen = RecommendationsViewController(audioAPI: environment.audioAPI, network: environment.network, kind: .similar(seed))
+                bindPlayer(to: screen)
             default:
                 screen = StoredTracksViewController(library: environment.library, source: .saved)
+                bindPlayer(to: screen)
             }
-            bindPlayer(to: screen)
             navigation.pushViewController(screen, animated: true)
             screen.reveal(track)
         }
@@ -174,6 +184,7 @@ final class AppCoordinator {
         Log.app.info("sign out")
         player.stop()
         autoCache = nil
+        recommendations = nil
         downloads.cancelAll()
         downloads.clearFinished()
         Task { [library = environment.library, cache = environment.cache] in
@@ -189,6 +200,12 @@ final class AppCoordinator {
             player.play(track, in: queue, source: source)
         }
         list.onPlayNext = { [player] track in player.playNext(track) }
+        list.onShowSimilar = { [weak self] track, list in
+            guard let self, let navigation = list.navigationController ?? musicNavigation else { return }
+            let similar = RecommendationsViewController(audioAPI: environment.audioAPI, network: environment.network, kind: .similar(track))
+            bindPlayer(to: similar)
+            navigation.pushViewController(similar, animated: true)
+        }
         list.onAddToQueue = { [player] track in player.addToQueue(track) }
         list.isCached = { [cacheState] track in cacheState.isCached(track) }
         list.onDownload = { [weak self] track, list in
@@ -215,6 +232,16 @@ final class AppCoordinator {
         }
     }
 
+    private func recommendationsScreen(userID: Int64) -> RecommendationsViewController {
+        if let recommendations {
+            return recommendations
+        }
+        let screen = RecommendationsViewController(audioAPI: environment.audioAPI, network: environment.network, kind: .forUser(userID))
+        bindPlayer(to: screen)
+        recommendations = screen
+        return screen
+    }
+
     private func makeGeneralScreen(_ row: GeneralViewController.Row, userID: Int64, navigation: UINavigationController) -> UIViewController {
         switch row {
         case .saved:
@@ -225,6 +252,8 @@ final class AppCoordinator {
             let listened = StoredTracksViewController(library: environment.library, source: .listened)
             bindPlayer(to: listened)
             return listened
+        case .recommendations:
+            return recommendationsScreen(userID: userID)
         case .playlists:
             let playlists = PlaylistsViewController(audioAPI: environment.audioAPI, network: environment.network, ownerID: userID)
             playlists.onSelectPlaylist = { [weak self, weak navigation] playlist in

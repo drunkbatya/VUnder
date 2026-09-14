@@ -6,6 +6,8 @@ enum QueueSource: Equatable {
     case saved
     case listened
     case playlist(Playlist)
+    case recommendations
+    case similar(Track)
 
     var title: String {
         switch self {
@@ -14,6 +16,8 @@ enum QueueSource: Equatable {
         case .saved: return "Saved"
         case .listened: return "Listened"
         case .playlist(let playlist): return playlist.title
+        case .recommendations: return "Recommendations"
+        case .similar(let track): return "Similar to \(track.title)"
         }
     }
 }
