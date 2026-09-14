@@ -6,6 +6,7 @@ actor VKAPIClient {
     private let store: SessionStore
     private var refreshTask: Task<String, Error>?
     private weak var challengeHandler: VKAPIChallengeHandling?
+    private var anonymousTokenProvider: (@Sendable () async throws -> String)?
 
     init(urlSession: URLSession, store: SessionStore) {
         self.urlSession = urlSession
@@ -14,6 +15,10 @@ actor VKAPIClient {
 
     func setChallengeHandler(_ handler: VKAPIChallengeHandling?) {
         challengeHandler = handler
+    }
+
+    func setAnonymousTokenProvider(_ provider: @escaping @Sendable () async throws -> String) {
+        anonymousTokenProvider = provider
     }
 
     func call(_ request: VKAPIRequest) async throws -> JSONObject {
@@ -65,7 +70,6 @@ actor VKAPIClient {
             }
         case .token(let token):
             accessToken = token
-            signingSecret = session?.exchangeToken
         case .none:
             break
         }
@@ -107,9 +111,13 @@ actor VKAPIClient {
         let error = VKAPIErrorResponse(errorJSON)
         Log.api.error("<- \(request.method, privacy: .public) http=\(status, privacy: .public) \(elapsed, privacy: .public)ms error \(error.code, privacy: .public): \(error.message, privacy: .public)")
 
-        if error.isExpiredToken, case .session = request.authorization, session != nil, !retriedAfterRefresh {
-            Log.api.notice("access token expired, refreshing before retrying \(request.method, privacy: .public)")
-            _ = try await refreshAccessToken()
+        if error.isExpiredToken, case .session = request.authorization, let session, !retriedAfterRefresh {
+            if let current = store.session, current.accessToken != session.accessToken {
+                Log.api.notice("access token already refreshed elsewhere, retrying \(request.method, privacy: .public)")
+            } else {
+                Log.api.notice("access token expired, refreshing before retrying \(request.method, privacy: .public)")
+                _ = try await refreshAccessToken(expired: session.accessToken)
+            }
             return try await call(request, captcha: captcha, retriedAfterRefresh: true)
         }
         if error.code == 14, let sid = error.captchaSID, let imageURL = error.captchaImageURL {
@@ -127,37 +135,74 @@ actor VKAPIClient {
         throw VKAPIError.api(error)
     }
 
-    private func refreshAccessToken() async throws -> String {
+    private func refreshAccessToken(expired: String) async throws -> String {
         if let refreshTask {
             return try await refreshTask.value
         }
         let task = Task<String, Error> {
             guard let session = self.store.session else { throw VKAPIError.sessionExpired }
-            let request = VKAPIRequest.auth("auth.refreshTokens", parameters: [
-                ("client_id", VKClientIdentity.clientID),
-                ("client_secret", VKClientIdentity.clientSecret),
-                ("exchange_tokens", session.exchangeToken),
-                ("active_index", "0"),
-                ("scope", "all"),
-                ("initiator", "expired_token"),
-            ])
-            do {
-                let response = try await self.call(request, captcha: nil, retriedAfterRefresh: true)
-                guard let token = response.object("response")?.objects("success").first?.object("access_token")?.string("token") else {
-                    throw VKAPIError.malformedResponse(method: request.method)
-                }
-                self.store.updateAccessToken(token)
-                Log.api.notice("access token refreshed")
-                return token
-            } catch {
-                Log.api.error("token refresh failed: \(error.localizedDescription, privacy: .public), clearing session")
-                self.store.clear()
-                throw VKAPIError.sessionExpired
+            if session.accessToken != expired {
+                return session.accessToken
             }
+            var rejection: VKAPIErrorResponse?
+            for variant in TokenRefreshVariant.allCases {
+                do {
+                    let token = try await self.requestRefreshedToken(variant: variant, exchangeToken: session.exchangeToken)
+                    self.store.updateAccessToken(token)
+                    Log.api.notice("access token refreshed via \(variant.rawValue, privacy: .public)")
+                    return token
+                } catch VKAPIError.api(let response) {
+                    Log.api.error("token refresh via \(variant.rawValue, privacy: .public) rejected \(response.code, privacy: .public): \(response.message, privacy: .public)")
+                    rejection = response
+                } catch {
+                    Log.api.error("token refresh via \(variant.rawValue, privacy: .public) failed: \(error.localizedDescription, privacy: .public), keeping session")
+                    throw error
+                }
+            }
+            Log.api.error("token refresh rejected by every variant, last code \(rejection?.code ?? 0, privacy: .public), clearing session")
+            self.store.clear()
+            throw VKAPIError.sessionExpired
         }
         refreshTask = task
         defer { refreshTask = nil }
         return try await task.value
+    }
+
+    private func requestRefreshedToken(variant: TokenRefreshVariant, exchangeToken: String) async throws -> String {
+        let authorization: VKAPIRequest.Authorization
+        switch variant {
+        case .expiredToken:
+            authorization = .session
+        case .noToken:
+            authorization = .none
+        case .anonymousToken:
+            guard let anonymousTokenProvider else { throw VKAPIError.challengeUnavailable }
+            authorization = .token(try await anonymousTokenProvider())
+        }
+        var request = VKAPIRequest.auth("auth.refreshTokens", parameters: [
+            ("client_id", VKClientIdentity.clientID),
+            ("client_secret", VKClientIdentity.clientSecret),
+            ("exchange_tokens", exchangeToken),
+            ("active_index", "0"),
+            ("scope", "all"),
+            ("initiator", "expired_token"),
+        ])
+        request.authorization = authorization
+        let json = try await call(request, captcha: nil, retriedAfterRefresh: true)
+        let response = json.object("response")
+        let success = response?.objects("success").first
+        guard let token = success?.object("access_token")?.string("token"), !token.isEmpty else {
+            Log.api.error("token refresh via \(variant.rawValue, privacy: .public) response without token: \(LogRedaction.json(json), privacy: .public) success=\(success.map(LogRedaction.json) ?? "none", privacy: .public) errors=\(response?.objects("errors").map(LogRedaction.json).joined(separator: "; ") ?? "none", privacy: .public)")
+            throw VKAPIError.malformedResponse(method: request.method)
+        }
+        Log.api.notice("token refresh via \(variant.rawValue, privacy: .public) expires_in=\(success?.object("access_token")?.int("expires_in") ?? 0, privacy: .public)")
+        return token
+    }
+
+    private enum TokenRefreshVariant: String, CaseIterable {
+        case expiredToken = "expired_token_bearer"
+        case noToken = "no_token"
+        case anonymousToken = "anonymous_token_bearer"
     }
 
     nonisolated static func signature(method: String, parameters: [(String, String)], secret: String) -> String {

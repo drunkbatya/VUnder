@@ -16,7 +16,7 @@ struct VKAPIErrorResponse {
     }
 
     var isExpiredToken: Bool {
-        code == 5 && message.contains("expired")
+        (code == 5 && message.contains("expired")) || code == 1117
     }
 
     var isWrongCode: Bool {

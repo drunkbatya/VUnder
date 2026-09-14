@@ -19,8 +19,11 @@ final class AppEnvironment {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 30
         configuration.httpShouldSetCookies = false
-        api = VKAPIClient(urlSession: URLSession(configuration: configuration), store: sessionStore)
-        oauth = VKOAuthClient(store: sessionStore)
+        let apiClient = VKAPIClient(urlSession: URLSession(configuration: configuration), store: sessionStore)
+        let oauthClient = VKOAuthClient(store: sessionStore)
+        Task { await apiClient.setAnonymousTokenProvider { try await oauthClient.anonymousToken() } }
+        api = apiClient
+        oauth = oauthClient
         authEndpoints = VKAuthEndpoints(api: api)
         authFlow = VKAuthFlow(oauth: oauth, endpoints: authEndpoints, store: sessionStore)
         settings = AppSettings()
