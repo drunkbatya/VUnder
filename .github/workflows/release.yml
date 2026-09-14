@@ -52,7 +52,7 @@ jobs:
       - name: Build IPA
         run: |
           make resolve
-          make ipa VERSION="${{ steps.version.outputs.version }}" BUILD_NUMBER="${{ steps.version.outputs.build }}" SIGNING_STYLE=manual EXPORT_METHOD=release-testing TEAM_ID="${{ steps.signing.outputs.team_id }}" PROFILE_NAME="${{ steps.signing.outputs.profile_name }}"
+          make ipa SIGNING_STYLE=manual EXPORT_METHOD=release-testing TEAM_ID="${{ steps.signing.outputs.team_id }}" PROFILE_NAME="${{ steps.signing.outputs.profile_name }}"
 
       - name: Collect release notes
         run: |
@@ -82,7 +82,7 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes-file build/notes.md
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: build/ota
 
@@ -99,4 +99,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

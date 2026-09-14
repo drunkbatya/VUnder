@@ -8,8 +8,6 @@ ARCHIVE        := $(BUILD_DIR)/$(SCHEME).xcarchive
 EXPORT_DIR     := $(BUILD_DIR)/ipa
 IPA            := $(EXPORT_DIR)/$(SCHEME).ipa
 EXPORT_OPTIONS := $(GENERATED_DIR)/ExportOptions.plist
-VERSION        ?= $(shell git describe --tags --exact-match --match '[0-9]*' 2>/dev/null || echo 0.0.0)
-BUILD_NUMBER   ?= $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
 
 -include local.mk
 
@@ -24,12 +22,11 @@ SIMULATOR      ?= iPhone 15
 export TEAM_ID EXPORT_METHOD PROFILE_NAME BUNDLE_ID
 
 XCODEBUILD := xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(CONFIGURATION)
-VERSION_FLAGS := MARKETING_VERSION=$(VERSION) CURRENT_PROJECT_VERSION=$(BUILD_NUMBER)
 
 ifeq ($(SIGNING_STYLE),automatic)
-SIGNING_FLAGS := -allowProvisioningUpdates CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=$(TEAM_ID)
+SIGNING_FLAGS := -allowProvisioningUpdates CODE_SIGN_STYLE=Automatic VUNDER_TEAM=$(TEAM_ID)
 else
-SIGNING_FLAGS := CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=$(TEAM_ID) PROVISIONING_PROFILE_SPECIFIER="$(PROFILE_NAME)" CODE_SIGN_IDENTITY="$(SIGNING_IDENTITY)"
+SIGNING_FLAGS := VUNDER_TEAM=$(TEAM_ID) VUNDER_PROFILE="$(PROFILE_NAME)" VUNDER_SIGN_IDENTITY="$(SIGNING_IDENTITY)"
 endif
 
 .PHONY: all resolve build simulator archive ipa install clean version
@@ -46,10 +43,10 @@ simulator:
 	$(XCODEBUILD) -destination 'platform=iOS Simulator,name=$(SIMULATOR)' -derivedDataPath $(BUILD_DIR)/DerivedData CODE_SIGNING_ALLOWED=NO build
 
 archive: check-team
-	$(XCODEBUILD) -destination 'generic/platform=iOS' -archivePath $(ARCHIVE) $(SIGNING_FLAGS) $(VERSION_FLAGS) archive
+	$(XCODEBUILD) -destination 'generic/platform=iOS' -archivePath $(ARCHIVE) $(SIGNING_FLAGS) archive
 
 version:
-	@echo "$(VERSION) ($(BUILD_NUMBER))"
+	@python3 scripts/git_version.py --print
 
 $(EXPORT_OPTIONS): templates/ExportOptions.$(SIGNING_STYLE).plist.in scripts/render_template.py
 	mkdir -p $(GENERATED_DIR)

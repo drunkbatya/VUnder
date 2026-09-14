@@ -5,3 +5,5 @@ DerivedData/
 generated/
 local.mk
 build/
+*.swo
+*.swp
