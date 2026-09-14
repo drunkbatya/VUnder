@@ -1,3 +1,4 @@
+import OTAUpdater
 import UIKit
 import os
 
@@ -11,6 +12,7 @@ final class AppCoordinator {
     private let fileInfoProvider: TrackFileInfoProvider
     private let exporter: TrackExporter
     private let downloads: DownloadCenter
+    private let updater: OTAUpdater
     private var autoCache: AutoCacheController?
     private var loginCoordinator: LoginCoordinator?
     private weak var musicNavigation: UINavigationController?
@@ -32,6 +34,7 @@ final class AppCoordinator {
         fileInfoProvider = TrackFileInfoProvider(localFileURL: { [cache = environment.cache] track in cache.localFileURL(for: track) })
         exporter = TrackExporter()
         downloads = DownloadCenter(cache: environment.cache, exporter: exporter)
+        updater = OTAUpdater(feedURL: ReleaseFeed.url)
     }
 
     func start() {
@@ -62,6 +65,9 @@ final class AppCoordinator {
             showLogin()
         }
         window.makeKeyAndVisible()
+        updater.checkOnLaunch { [weak window] in
+            window?.rootViewController?.topmostPresentedViewController
+        }
     }
 
     private func applyAppearance() {
@@ -116,7 +122,7 @@ final class AppCoordinator {
         }
         root.onSettings = { [weak self, weak navigation] in
             guard let self, let navigation else { return }
-            let settings = SettingsViewController(settings: environment.settings, cache: environment.cache)
+            let settings = SettingsViewController(settings: environment.settings, cache: environment.cache, updater: updater)
             settings.onSignOut = { [weak self] in self?.signOut() }
             navigation.pushViewController(settings, animated: true)
         }

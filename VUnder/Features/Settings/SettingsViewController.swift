@@ -1,3 +1,4 @@
+import OTAUpdater
 import UIKit
 import os
 
@@ -45,11 +46,13 @@ final class SettingsViewController: UITableViewController {
 
     private let settings: AppSettings
     private let cache: AudioCache
+    private let updater: OTAUpdater
     private var cacheSizeText = "..."
 
-    init(settings: AppSettings, cache: AudioCache) {
+    init(settings: AppSettings, cache: AudioCache, updater: OTAUpdater) {
         self.settings = settings
         self.cache = cache
+        self.updater = updater
         super.init(style: .insetGrouped)
     }
 
@@ -89,7 +92,7 @@ final class SettingsViewController: UITableViewController {
         case .music: return ToggleRow.music.count
         case .cache: return 2
         case .account: return 1
-        case .about: return 1
+        case .about: return 2
         case .debug: return ToggleRow.debug.count
         }
     }
@@ -127,9 +130,13 @@ final class SettingsViewController: UITableViewController {
             content.text = "Sign out"
             content.textProperties.color = .systemRed
         case .about:
-            content.text = "Version"
-            content.secondaryText = SettingsViewController.versionText
-            cell.selectionStyle = .none
+            if indexPath.row == 0 {
+                content.text = "Version"
+                content.secondaryText = SettingsViewController.versionText
+                cell.selectionStyle = .none
+            } else {
+                content.text = "Check for updates"
+            }
         }
         cell.contentConfiguration = content
         return cell
@@ -158,7 +165,10 @@ final class SettingsViewController: UITableViewController {
                 self?.onSignOut?()
             }
         case .about:
-            break
+            if indexPath.row == 1 {
+                Log.app.info("manual update check")
+                updater.checkNow(from: self)
+            }
         }
     }
 

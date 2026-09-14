@@ -17,6 +17,7 @@ TEAM_ID        ?=
 SIGNING_STYLE  ?= automatic
 EXPORT_METHOD  ?= development
 PROFILE_NAME   ?=
+SIGNING_IDENTITY ?= Apple Distribution
 DEVICE         ?=
 SIMULATOR      ?= iPhone 15
 
@@ -28,7 +29,7 @@ VERSION_FLAGS := MARKETING_VERSION=$(VERSION) CURRENT_PROJECT_VERSION=$(BUILD_NU
 ifeq ($(SIGNING_STYLE),automatic)
 SIGNING_FLAGS := -allowProvisioningUpdates CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=$(TEAM_ID)
 else
-SIGNING_FLAGS := CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=$(TEAM_ID) PROVISIONING_PROFILE_SPECIFIER="$(PROFILE_NAME)"
+SIGNING_FLAGS := CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=$(TEAM_ID) PROVISIONING_PROFILE_SPECIFIER="$(PROFILE_NAME)" CODE_SIGN_IDENTITY="$(SIGNING_IDENTITY)"
 endif
 
 .PHONY: all resolve build simulator archive ipa install clean version bump-patch bump-minor bump-major
@@ -62,12 +63,12 @@ bump:
 	$(eval NEW_VERSION := $(shell echo $(VERSION) | awk -F. -v p=$(PART) '{ $$p = $$p + 1; for (i = p + 1; i <= 3; i++) $$i = 0; print $$1"."$$2"."$$3 }'))
 	sed -i.bak 's/MARKETING_VERSION = $(VERSION);/MARKETING_VERSION = $(NEW_VERSION);/g' $(PROJECT)/project.pbxproj && rm $(PROJECT)/project.pbxproj.bak
 	git commit -q -m "Version $(NEW_VERSION)" $(PROJECT)/project.pbxproj
-	git tag v$(NEW_VERSION)
+	git tag $(NEW_VERSION)
 	@echo $(NEW_VERSION)
 
-$(EXPORT_OPTIONS): templates/ExportOptions.$(SIGNING_STYLE).plist.in
+$(EXPORT_OPTIONS): templates/ExportOptions.$(SIGNING_STYLE).plist.in scripts/render_template.py
 	mkdir -p $(GENERATED_DIR)
-	envsubst '$$TEAM_ID $$EXPORT_METHOD $$PROFILE_NAME $$BUNDLE_ID' < $< > $@
+	python3 scripts/render_template.py $< TEAM_ID EXPORT_METHOD PROFILE_NAME BUNDLE_ID > $@
 
 ipa: archive $(EXPORT_OPTIONS)
 	xcodebuild -exportArchive -archivePath $(ARCHIVE) -exportOptionsPlist $(EXPORT_OPTIONS) -exportPath $(EXPORT_DIR) $(if $(filter automatic,$(SIGNING_STYLE)),-allowProvisioningUpdates)

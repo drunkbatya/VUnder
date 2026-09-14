@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  SCHEME: VUnder
+  BUNDLE_ID: com.drunkbatya.VUnder
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: drunkbatya/ios-ota-updater
+          path: ota
+
+      - name: Read project version
+        id: version
+        run: |
+          read -r version build <<< "$(make -s version | tr -d '()')"
+          test "$GITHUB_REF_NAME" = "$version" || { echo "tag $GITHUB_REF_NAME does not match MARKETING_VERSION $version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing identity
+        id: signing
+        env:
+          P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12 }}
+          P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.IOS_ADHOC_PROFILE }}
+        run: python3 ota/scripts/import_signing.py
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build IPA
+        run: |
+          make resolve
+          make ipa SIGNING_STYLE=manual EXPORT_METHOD=release-testing TEAM_ID="${{ steps.signing.outputs.team_id }}" PROFILE_NAME="${{ steps.signing.outputs.profile_name }}"
+
+      - name: Collect release notes
+        run: |
+          previous=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          git log --pretty='- %s' ${previous:+"$previous..HEAD"} > build/notes.md
+
+      - name: Build OTA feed
+        run: |
+          python3 ota/scripts/make_feed.py \
+            --out build/ota \
+            --ipa "build/ipa/$SCHEME.ipa" \
+            --base-url "${{ steps.pages.outputs.base_url }}" \
+            --bundle-id "$BUNDLE_ID" \
+            --version "${{ steps.version.outputs.version }}" \
+            --build "${{ steps.version.outputs.build }}" \
+            --title "$SCHEME" \
+            --notes build/notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "build/ota/$SCHEME-${{ steps.version.outputs.version }}.ipa" \
+            build/ota/manifest.plist \
+            build/ota/update.json \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file build/notes.md
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/ota
+
+      - name: Remove signing keychain
+        if: always()
+        run: |
+          test -z "${{ steps.signing.outputs.keychain }}" || security delete-keychain "${{ steps.signing.outputs.keychain }}"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

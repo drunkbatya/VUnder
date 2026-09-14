@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A1B2C3D4E5F6000000000101 /* KeychainAccess in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000201 /* KeychainAccess */; };
 		A1B2C3D4E5F6000000000102 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000202 /* GRDB */; };
+		A1B2C3D4E5F6000000000103 /* OTAUpdater in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000203 /* OTAUpdater */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -72,6 +73,7 @@
 			files = (
 				A1B2C3D4E5F6000000000101 /* KeychainAccess in Frameworks */,
 				A1B2C3D4E5F6000000000102 /* GRDB in Frameworks */,
+				A1B2C3D4E5F6000000000103 /* OTAUpdater in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -134,6 +136,7 @@
 			packageProductDependencies = (
 				A1B2C3D4E5F6000000000201 /* KeychainAccess */,
 				A1B2C3D4E5F6000000000202 /* GRDB */,
+				A1B2C3D4E5F6000000000203 /* OTAUpdater */,
 			);
 			productName = VUnder;
 			productReference = D537E3F83056C0500052A87C /* VUnder.app */;
@@ -220,6 +223,7 @@
 			packageReferences = (
 				A1B2C3D4E5F6000000000301 /* XCRemoteSwiftPackageReference "KeychainAccess" */,
 				A1B2C3D4E5F6000000000302 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				A1B2C3D4E5F6000000000303 /* XCRemoteSwiftPackageReference "ios-ota-updater" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D537E3F93056C0500052A87C /* Products */;
@@ -626,6 +630,14 @@
 				minimumVersion = 7.0.0;
 			};
 		};
+		A1B2C3D4E5F6000000000303 /* XCRemoteSwiftPackageReference "ios-ota-updater" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/drunkbatya/ios-ota-updater";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -638,6 +650,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A1B2C3D4E5F6000000000302 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
 			productName = GRDB;
+		};
+		A1B2C3D4E5F6000000000203 /* OTAUpdater */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000303 /* XCRemoteSwiftPackageReference "ios-ota-updater" */;
+			productName = OTAUpdater;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
