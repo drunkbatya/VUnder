@@ -31,13 +31,11 @@ jobs:
           repository: drunkbatya/ios-ota-updater
           path: ota
 
-      - name: Read project version
+      - name: Version from tag
         id: version
         run: |
-          read -r version build <<< "$(make -s version | tr -d '()')"
-          test "$GITHUB_REF_NAME" = "$version" || { echo "tag $GITHUB_REF_NAME does not match MARKETING_VERSION $version"; exit 1; }
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "version=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          echo "build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Import signing identity
         id: signing
@@ -54,7 +52,7 @@ jobs:
       - name: Build IPA
         run: |
           make resolve
-          make ipa SIGNING_STYLE=manual EXPORT_METHOD=release-testing TEAM_ID="${{ steps.signing.outputs.team_id }}" PROFILE_NAME="${{ steps.signing.outputs.profile_name }}"
+          make ipa VERSION="${{ steps.version.outputs.version }}" BUILD_NUMBER="${{ steps.version.outputs.build }}" SIGNING_STYLE=manual EXPORT_METHOD=release-testing TEAM_ID="${{ steps.signing.outputs.team_id }}" PROFILE_NAME="${{ steps.signing.outputs.profile_name }}"
 
       - name: Collect release notes
         run: |

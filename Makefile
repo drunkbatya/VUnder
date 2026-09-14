@@ -8,8 +8,8 @@ ARCHIVE        := $(BUILD_DIR)/$(SCHEME).xcarchive
 EXPORT_DIR     := $(BUILD_DIR)/ipa
 IPA            := $(EXPORT_DIR)/$(SCHEME).ipa
 EXPORT_OPTIONS := $(GENERATED_DIR)/ExportOptions.plist
-VERSION        := $(shell sed -n 's/.*MARKETING_VERSION = \([0-9][0-9.]*\);/\1/p' $(PROJECT)/project.pbxproj | head -1)
-BUILD_NUMBER   := $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
+VERSION        ?= $(shell git describe --tags --exact-match --match '[0-9]*' 2>/dev/null || echo 0.0.0)
+BUILD_NUMBER   ?= $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
 
 -include local.mk
 
@@ -32,7 +32,7 @@ else
 SIGNING_FLAGS := CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=$(TEAM_ID) PROVISIONING_PROFILE_SPECIFIER="$(PROFILE_NAME)" CODE_SIGN_IDENTITY="$(SIGNING_IDENTITY)"
 endif
 
-.PHONY: all resolve build simulator archive ipa install clean version bump-patch bump-minor bump-major
+.PHONY: all resolve build simulator archive ipa install clean version
 
 all: ipa
 
@@ -50,21 +50,6 @@ archive: check-team
 
 version:
 	@echo "$(VERSION) ($(BUILD_NUMBER))"
-
-bump-patch:
-	@$(MAKE) --no-print-directory bump PART=3
-bump-minor:
-	@$(MAKE) --no-print-directory bump PART=2
-bump-major:
-	@$(MAKE) --no-print-directory bump PART=1
-
-bump:
-	@test -z "$$(git status --porcelain)" || { echo "working tree is not clean"; exit 1; }
-	$(eval NEW_VERSION := $(shell echo $(VERSION) | awk -F. -v p=$(PART) '{ $$p = $$p + 1; for (i = p + 1; i <= 3; i++) $$i = 0; print $$1"."$$2"."$$3 }'))
-	sed -i.bak 's/MARKETING_VERSION = $(VERSION);/MARKETING_VERSION = $(NEW_VERSION);/g' $(PROJECT)/project.pbxproj && rm $(PROJECT)/project.pbxproj.bak
-	git commit -q -m "Version $(NEW_VERSION)" $(PROJECT)/project.pbxproj
-	git tag $(NEW_VERSION)
-	@echo $(NEW_VERSION)
 
 $(EXPORT_OPTIONS): templates/ExportOptions.$(SIGNING_STYLE).plist.in scripts/render_template.py
 	mkdir -p $(GENERATED_DIR)
