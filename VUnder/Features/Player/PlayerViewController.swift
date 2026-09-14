@@ -19,7 +19,7 @@ final class PlayerViewController: UIViewController {
     private let queueButton = UIButton(type: .system)
     private let jumpButton = UIButton(type: .system)
     private let libraryButton = UIButton(type: .system)
-    var isMine: ((Track) -> Bool)?
+    var membership: ((Track) -> LibraryMembership)?
     var onToggleLibrary: ((Track, Bool, PlayerViewController) -> Void)?
     private var observers: [NSObjectProtocol] = []
     private var artworkTask: Task<Void, Never>?
@@ -41,6 +41,10 @@ final class PlayerViewController: UIViewController {
         view.backgroundColor = Theme.background
         buildLayout()
         observers.append(NotificationCenter.default.addObserver(forName: PlayerService.stateDidChange, object: player, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            MainActor.assumeIsolated { self.stateChanged() }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: LibraryEditor.didChange, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             MainActor.assumeIsolated { self.stateChanged() }
         })
@@ -159,15 +163,15 @@ final class PlayerViewController: UIViewController {
         queueButton.tintColor = Theme.secondaryText
         jumpButton.tintColor = Theme.secondaryText
         jumpButton.isEnabled = player.source != nil
-        let mine = isMine?(track) ?? false
-        libraryButton.setImage(UIImage(systemName: mine ? "minus.circle" : "plus.circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
+        let membership = membership?(track) ?? .removed
+        libraryButton.setImage(UIImage(systemName: membership == .mine ? "minus.circle" : "plus.circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
         libraryButton.tintColor = Theme.secondaryText
-        libraryButton.isHidden = isMine == nil || (!mine && !track.isAvailable)
+        libraryButton.isHidden = self.membership == nil || (membership != .mine && !track.isAvailable)
     }
 
     @objc private func toggleLibrary() {
-        guard let track = player.current, let isMine else { return }
-        if isMine(track) {
+        guard let track = player.current, let membership = membership?(track) else { return }
+        if membership == .mine {
             DeleteConfirmation.present(track: track, from: self) { [weak self] in
                 guard let self else { return }
                 onToggleLibrary?(track, true, self)

@@ -148,6 +148,14 @@ final class AudioAPI: Sendable {
         return newID
     }
 
+    func restore(_ track: Track) async throws {
+        _ = try await audioCall("audio.restore", parameters: [
+            ("owner_id", String(track.ownerID)),
+            ("audio_id", String(track.id)),
+        ])
+        Log.music.info("restored \(track.storageID, privacy: .public)")
+    }
+
     func delete(_ track: Track) async throws {
         _ = try await audioCall("audio.delete", parameters: [
             ("owner_id", String(track.ownerID)),

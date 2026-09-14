@@ -38,7 +38,7 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
     var onDownload: ((Track, TrackListViewController) -> Void)?
     var onSaveTo: ((Track, TrackListViewController) -> Void)?
     var onShowSimilar: ((Track, TrackListViewController) -> Void)?
-    var isMine: ((Track) -> Bool)?
+    var membership: ((Track) -> LibraryMembership)?
     var onAddToLibrary: ((Track, TrackListViewController) -> Void)?
     var onDeleteFromLibrary: ((Track, TrackListViewController) -> Void)?
     private var pendingReveal: Track?
@@ -229,13 +229,13 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
                     onSaveTo(track, self)
                 })
             }
-            if let self, let isMine = isMine {
-                if isMine(track), let onDeleteFromLibrary = onDeleteFromLibrary {
+            if let self, let membership = membership {
+                if membership(track) == .mine, let onDeleteFromLibrary = onDeleteFromLibrary {
                     actions.append(UIAction(title: "Delete from my music", image: UIImage(systemName: "minus.circle"), attributes: [.destructive]) { [weak self] _ in
                         guard let self else { return }
                         DeleteConfirmation.present(track: track, from: self) { onDeleteFromLibrary(track, self) }
                     })
-                } else if !isMine(track), track.isAvailable, let onAddToLibrary = onAddToLibrary {
+                } else if membership(track) != .mine, track.isAvailable, let onAddToLibrary = onAddToLibrary {
                     actions.append(UIAction(title: "Add to my music", image: UIImage(systemName: "plus.circle")) { [weak self] _ in
                         guard let self else { return }
                         onAddToLibrary(track, self)

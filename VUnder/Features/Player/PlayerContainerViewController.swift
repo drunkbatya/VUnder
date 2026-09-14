@@ -2,7 +2,7 @@ import UIKit
 
 final class PlayerContainerViewController: UIViewController {
     var onJumpToTrack: ((Track, QueueSource) -> Void)?
-    var isMine: ((Track) -> Bool)?
+    var membership: ((Track) -> LibraryMembership)?
     var onToggleLibrary: ((Track, Bool, PlayerViewController) -> Void)?
 
     private let content: UIViewController
@@ -75,7 +75,7 @@ final class PlayerContainerViewController: UIViewController {
                 self?.onJumpToTrack?(track, source)
             }
         }
-        controller.isMine = isMine
+        controller.membership = membership
         controller.onToggleLibrary = onToggleLibrary
         present(controller, animated: true)
     }

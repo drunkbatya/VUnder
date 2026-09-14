@@ -3,6 +3,8 @@ import GRDB
 import os
 
 final class TrackLibrary: Sendable {
+    static let didChange = Notification.Name("TrackLibrary.didChange")
+
     private let database: AppDatabase
 
     init(database: AppDatabase) {
@@ -54,6 +56,14 @@ final class TrackLibrary: Sendable {
             try TrackLibrary.deleteOrphans(db)
         }
         Log.storage.info("library replaced with \(tracks.count, privacy: .public) tracks")
+        notify()
+    }
+
+    func libraryIDs() async throws -> Set<String> {
+        try await database.queue.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT ownerID, id FROM track WHERE libraryPosition IS NOT NULL")
+            return Set(rows.map { "\($0["ownerID"] as Int64)_\($0["id"] as Int64)" })
+        }
     }
 
     func insertAtTop(_ track: Track) async throws {
@@ -64,6 +74,7 @@ final class TrackLibrary: Sendable {
             try stored.save(db)
         }
         Log.storage.info("library insert at top \(track.storageID, privacy: .public)")
+        notify()
     }
 
     func removeFromLibrary(_ track: Track) async throws {
@@ -74,6 +85,7 @@ final class TrackLibrary: Sendable {
             try TrackLibrary.deleteOrphans(db)
         }
         Log.storage.info("library remove \(track.storageID, privacy: .public)")
+        notify()
     }
 
     func track(storageID: String) async throws -> Track? {
@@ -127,6 +139,13 @@ final class TrackLibrary: Sendable {
             return try Track.deleteAll(db)
         }
         Log.storage.info("library cleared, removed \(deleted, privacy: .public) tracks")
+        notify()
+    }
+
+    private func notify() {
+        Task { @MainActor in
+            NotificationCenter.default.post(name: TrackLibrary.didChange, object: nil)
+        }
     }
 
     private static func deleteOrphans(_ db: Database) throws {

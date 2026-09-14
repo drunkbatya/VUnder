@@ -90,7 +90,7 @@ final class AppCoordinator {
     private func showMusic() {
         guard let session = environment.sessionStore.session else { return }
         recommendations = nil
-        let editor = LibraryEditor(userID: session.userID, audioAPI: environment.audioAPI, library: environment.library, player: player)
+        let editor = LibraryEditor(userID: session.userID, audioAPI: environment.audioAPI, library: environment.library, player: player, cache: environment.cache, downloads: downloads)
         libraryEditor = editor
         let myMusic = MyMusicViewController(
             audioAPI: environment.audioAPI,
@@ -131,7 +131,7 @@ final class AppCoordinator {
         container.onJumpToTrack = { [weak self] track, source in
             self?.jump(to: track, source: source)
         }
-        container.isMine = { [editor] track in editor.isMine(track) }
+        container.membership = { [editor] track in editor.membership(of: track) }
         container.onToggleLibrary = { [weak self] track, mine, screen in
             self?.editLibrary(track, delete: mine, notice: screen.showNotice, failure: screen.showError)
         }
@@ -216,7 +216,7 @@ final class AppCoordinator {
             navigation.pushViewController(similar, animated: true)
         }
         list.onAddToQueue = { [player] track in player.addToQueue(track) }
-        list.isMine = { [weak self] track in self?.libraryEditor?.isMine(track) ?? false }
+        list.membership = { [weak self] track in self?.libraryEditor?.membership(of: track) ?? .removed }
         list.onAddToLibrary = { [weak self] track, list in
             self?.editLibrary(track, delete: false, notice: list.showNotice, failure: list.showError)
         }
