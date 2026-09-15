@@ -20,6 +20,11 @@ struct FriendPage {
     let total: Int
 }
 
+struct AudioAttachmentPage {
+    let tracks: [Track]
+    let nextFrom: String?
+}
+
 struct LongPollServer {
     let url: URL
     let key: String
@@ -30,6 +35,7 @@ final class MessagesAPI: Sendable {
     static let conversationsPageSize = 30
     static let historyPageSize = 30
     static let friendsPageSize = 50
+    static let audioAttachmentsPageSize = 200
 
     private static let conversationsVersion = "5.163"
     private static let historyVersion = "5.129"
@@ -139,6 +145,22 @@ final class MessagesAPI: Sendable {
         }
         Log.messages.info("long poll server \(url.host ?? "", privacy: .public) ts=\(ts, privacy: .public)")
         return LongPollServer(url: url, key: key, ts: ts)
+    }
+
+    func audioAttachments(peerID: Int64, startFrom: String? = nil, count: Int = MessagesAPI.audioAttachmentsPageSize) async throws -> AudioAttachmentPage {
+        var parameters: [(String, String)] = [
+            ("peer_id", String(peerID)),
+            ("media_type", "audio"),
+            ("count", String(count)),
+        ]
+        if let startFrom {
+            parameters.append(("start_from", startFrom))
+        }
+        let response = try await api.response(VKAPIRequest(method: "messages.getHistoryAttachments", version: MessagesAPI.historyVersion, parameters: parameters))
+        let tracks = response.objects("items").compactMap { $0.object("attachment").flatMap(MessageAttachment.init(json:))?.track }
+        let nextFrom = response.string("next_from").flatMap { $0.isEmpty ? nil : $0 }
+        Log.messages.info("audio attachments peer=\(peerID, privacy: .public) from=\(startFrom ?? "-", privacy: .public) items=\(tracks.count, privacy: .public) next=\(nextFrom ?? "-", privacy: .public)")
+        return AudioAttachmentPage(tracks: tracks, nextFrom: nextFrom)
     }
 
     func friends(offset: Int, count: Int = MessagesAPI.friendsPageSize) async throws -> FriendPage {

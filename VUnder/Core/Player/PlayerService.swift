@@ -126,6 +126,36 @@ final class PlayerService {
         NotificationCenter.default.post(name: PlayerService.stateDidChange, object: self)
     }
 
+    func replaceQueue(with tracks: [Track], source: QueueSource) {
+        guard self.source == source, let current else { return }
+        var merged = tracks
+        for track in queue where !merged.contains(where: { $0.isSame(as: track) }) {
+            merged.append(track)
+        }
+        queue = merged
+        currentIndex = merged.firstIndex { $0.isSame(as: current) }
+        rebuildOrder()
+        Log.player.info("queue replaced from \(source.title, privacy: .public), size \(merged.count, privacy: .public)")
+        NotificationCenter.default.post(name: PlayerService.stateDidChange, object: self)
+    }
+
+    func appendToQueue(_ tracks: [Track], source: QueueSource) {
+        guard self.source == source else { return }
+        let fresh = tracks.filter { track in !queue.contains { $0.isSame(as: track) } }
+        guard !fresh.isEmpty else { return }
+        let firstNew = queue.count
+        queue.append(contentsOf: fresh)
+        let indices = Array(firstNew..<queue.count)
+        order.append(contentsOf: settings.shuffle ? indices.shuffled() : indices)
+        Log.player.info("queue appended \(fresh.count, privacy: .public) from \(source.title, privacy: .public), size \(self.queue.count, privacy: .public)")
+        NotificationCenter.default.post(name: PlayerService.stateDidChange, object: self)
+    }
+
+    var remainingCount: Int {
+        guard let position = orderPosition else { return 0 }
+        return order.count - position - 1
+    }
+
     func replace(_ track: Track, with replacement: Track) {
         var replaced = false
         for index in queue.indices where queue[index].isSame(as: track) {

@@ -14,6 +14,7 @@ final class AppCoordinator {
     private let downloads: DownloadCenter
     private let updater: OTAUpdater
     private let voicePlayer = VoicePlayer()
+    private lazy var conversationQueue = ConversationQueueLoader(api: environment.messagesAPI, player: player, network: environment.network)
     private var autoCache: AutoCacheController?
     private var messaging: MessagingContext?
     private weak var tabs: MainTabBarController?
@@ -239,7 +240,10 @@ final class AppCoordinator {
             voicePlayer: voicePlayer
         )
         chat.onPlayTrack = { [weak self] track, tracks in
-            self?.player.play(track, in: tracks, source: .conversation(peerID: peerID, title: title))
+            guard let self else { return }
+            let source = QueueSource.conversation(peerID: peerID, title: title)
+            player.play(track, in: Array(tracks.reversed()), source: source)
+            conversationQueue.start(peerID: peerID, source: source)
         }
         chat.trackMenu = { [weak self] track, chat in
             self?.chatTrackMenu(track, chat: chat)
