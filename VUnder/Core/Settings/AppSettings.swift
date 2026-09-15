@@ -47,13 +47,15 @@ final class AppSettings: @unchecked Sendable {
         static let shuffle = "player_shuffle"
         static let repeatMode = "player_repeat"
         static let preferHLS = "debug_prefer_hls"
+        static let markAsRead = "messages_mark_as_read"
+        static let longPollEnabled = "debug_long_poll"
     }
 
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        defaults.register(defaults: [Key.historyEnabled: true, Key.cacheEnabled: true, Key.cacheOnlyMine: true])
+        defaults.register(defaults: [Key.historyEnabled: true, Key.cacheEnabled: true, Key.cacheOnlyMine: true, Key.preferHLS: true, Key.markAsRead: true, Key.longPollEnabled: true])
     }
 
     var appearance: Appearance {
@@ -89,6 +91,16 @@ final class AppSettings: @unchecked Sendable {
     var preferHLS: Bool {
         get { defaults.bool(forKey: Key.preferHLS) }
         set { update(Key.preferHLS, newValue) }
+    }
+
+    var markAsRead: Bool {
+        get { defaults.bool(forKey: Key.markAsRead) }
+        set { update(Key.markAsRead, newValue) }
+    }
+
+    var longPollEnabled: Bool {
+        get { defaults.bool(forKey: Key.longPollEnabled) }
+        set { update(Key.longPollEnabled, newValue) }
     }
 
     private func update(_ key: String, _ value: Any) {

@@ -2,6 +2,7 @@ import UIKit
 
 final class PlayerViewController: UIViewController {
     var onJumpToTrack: ((Track, QueueSource) -> Void)?
+    var onShare: ((Track) -> Void)?
 
     private let player: PlayerService
     private let fileInfoProvider: TrackFileInfoProvider
@@ -19,6 +20,7 @@ final class PlayerViewController: UIViewController {
     private let queueButton = UIButton(type: .system)
     private let jumpButton = UIButton(type: .system)
     private let libraryButton = UIButton(type: .system)
+    private let shareButton = UIButton(type: .system)
     var membership: ((Track) -> LibraryMembership)?
     var onToggleLibrary: ((Track, Bool, PlayerViewController) -> Void)?
     private var observers: [NSObjectProtocol] = []
@@ -99,11 +101,13 @@ final class PlayerViewController: UIViewController {
         jumpButton.setImage(UIImage(systemName: "arrow.turn.up.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
         jumpButton.addTarget(self, action: #selector(jumpToTrack), for: .touchUpInside)
         libraryButton.addTarget(self, action: #selector(toggleLibrary), for: .touchUpInside)
-        for button in [shuffleButton, repeatButton, queueButton, jumpButton, libraryButton] {
+        shareButton.setImage(UIImage(systemName: "paperplane", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
+        shareButton.addTarget(self, action: #selector(share), for: .touchUpInside)
+        for button in [shuffleButton, repeatButton, queueButton, jumpButton, libraryButton, shareButton] {
             button.widthAnchor.constraint(equalToConstant: 48).isActive = true
             button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         }
-        let modes = UIStackView(arrangedSubviews: [shuffleButton, repeatButton, queueButton, jumpButton, libraryButton])
+        let modes = UIStackView(arrangedSubviews: [shuffleButton, repeatButton, queueButton, jumpButton, libraryButton, shareButton])
         modes.spacing = 12
         let modesRow = UIView()
         modes.translatesAutoresizingMaskIntoConstraints = false
@@ -167,6 +171,13 @@ final class PlayerViewController: UIViewController {
         libraryButton.setImage(UIImage(systemName: membership == .mine ? "minus.circle" : "plus.circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
         libraryButton.tintColor = Theme.secondaryText
         libraryButton.isHidden = self.membership == nil || (membership != .mine && !track.isAvailable)
+        shareButton.tintColor = Theme.secondaryText
+        shareButton.isHidden = onShare == nil || !track.isAvailable
+    }
+
+    @objc private func share() {
+        guard let track = player.current else { return }
+        onShare?(track)
     }
 
     @objc private func toggleLibrary() {

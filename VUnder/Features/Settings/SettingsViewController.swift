@@ -8,6 +8,7 @@ final class SettingsViewController: UITableViewController {
     private enum Section: Int, CaseIterable {
         case appearance
         case music
+        case messages
         case cache
         case account
         case about
@@ -17,6 +18,7 @@ final class SettingsViewController: UITableViewController {
             switch self {
             case .appearance: return "Appearance"
             case .music: return "Music"
+            case .messages: return "Messages"
             case .cache: return "Cache"
             case .account: return "Account"
             case .about: return "About"
@@ -30,6 +32,8 @@ final class SettingsViewController: UITableViewController {
         case cacheEnabled
         case cacheOnlyMine
         case preferHLS
+        case markAsRead
+        case longPoll
 
         var title: String {
             switch self {
@@ -37,11 +41,23 @@ final class SettingsViewController: UITableViewController {
             case .cacheEnabled: return "Save played tracks"
             case .cacheOnlyMine: return "Only my tracks"
             case .preferHLS: return "Request HLS streams (v=5.92)"
+            case .markAsRead: return "Mark messages as read"
+            case .longPoll: return "Long poll for new messages"
             }
         }
 
         static let music: [ToggleRow] = [.history, .cacheEnabled, .cacheOnlyMine]
-        static let debug: [ToggleRow] = [.preferHLS]
+        static let messages: [ToggleRow] = [.markAsRead]
+        static let debug: [ToggleRow] = [.preferHLS, .longPoll]
+
+        static func rows(in section: Section) -> [ToggleRow] {
+            switch section {
+            case .music: return music
+            case .messages: return messages
+            case .debug: return debug
+            default: return []
+            }
+        }
     }
 
     private let settings: AppSettings
@@ -89,11 +105,10 @@ final class SettingsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
         case .appearance: return Appearance.allCases.count
-        case .music: return ToggleRow.music.count
+        case .music, .messages, .debug: return ToggleRow.rows(in: Section(rawValue: section)!).count
         case .cache: return 2
         case .account: return 1
         case .about: return 2
-        case .debug: return ToggleRow.debug.count
         }
     }
 
@@ -108,8 +123,8 @@ final class SettingsViewController: UITableViewController {
             let appearance = Appearance.allCases[indexPath.row]
             content.text = appearance.title
             cell.accessoryType = settings.appearance == appearance ? .checkmark : .none
-        case .music, .debug:
-            let row = (Section(rawValue: indexPath.section) == .music ? ToggleRow.music : ToggleRow.debug)[indexPath.row]
+        case .music, .messages, .debug:
+            let row = ToggleRow.rows(in: Section(rawValue: indexPath.section)!)[indexPath.row]
             content.text = row.title
             let toggle = UISwitch()
             toggle.isOn = value(for: row)
@@ -148,7 +163,7 @@ final class SettingsViewController: UITableViewController {
         case .appearance:
             settings.appearance = Appearance.allCases[indexPath.row]
             tableView.reloadSections(IndexSet(integer: indexPath.section), with: .none)
-        case .music, .debug:
+        case .music, .messages, .debug:
             break
         case .cache:
             if indexPath.row == 1 {
@@ -185,6 +200,8 @@ final class SettingsViewController: UITableViewController {
         case .cacheEnabled: return settings.cacheEnabled
         case .cacheOnlyMine: return settings.cacheOnlyMine
         case .preferHLS: return settings.preferHLS
+        case .markAsRead: return settings.markAsRead
+        case .longPoll: return settings.longPollEnabled
         }
     }
 
@@ -196,6 +213,8 @@ final class SettingsViewController: UITableViewController {
         case .cacheEnabled: settings.cacheEnabled = toggle.isOn
         case .cacheOnlyMine: settings.cacheOnlyMine = toggle.isOn
         case .preferHLS: settings.preferHLS = toggle.isOn
+        case .markAsRead: settings.markAsRead = toggle.isOn
+        case .longPoll: settings.longPollEnabled = toggle.isOn
         }
     }
 

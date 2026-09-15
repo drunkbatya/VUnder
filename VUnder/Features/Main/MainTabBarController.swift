@@ -1,22 +1,24 @@
 import UIKit
 
-final class PlayerContainerViewController: UIViewController {
+final class MainTabBarController: UITabBarController {
     var onJumpToTrack: ((Track, QueueSource) -> Void)?
     var membership: ((Track) -> LibraryMembership)?
     var onToggleLibrary: ((Track, Bool, PlayerViewController) -> Void)?
+    var onShareTrack: ((Track) -> Void)?
 
-    private let content: UIViewController
     private let player: PlayerService
     private let fileInfoProvider: TrackFileInfoProvider
     private let miniPlayer = MiniPlayerView()
-    private var miniPlayerBottom: NSLayoutConstraint?
     private var observers: [NSObjectProtocol] = []
 
-    init(content: UIViewController, player: PlayerService, fileInfoProvider: TrackFileInfoProvider) {
-        self.content = content
+    init(music: UIViewController, messages: UIViewController, settings: UIViewController, player: PlayerService, fileInfoProvider: TrackFileInfoProvider) {
         self.player = player
         self.fileInfoProvider = fileInfoProvider
         super.init(nibName: nil, bundle: nil)
+        music.tabBarItem = UITabBarItem(title: "Music", image: UIImage(systemName: "music.note"), tag: 0)
+        messages.tabBarItem = UITabBarItem(title: "Messages", image: UIImage(systemName: "bubble.left.and.bubble.right"), tag: 1)
+        settings.tabBarItem = UITabBarItem(title: "Settings", image: UIImage(systemName: "gearshape"), tag: 2)
+        viewControllers = [music, messages, settings]
     }
 
     @available(*, unavailable)
@@ -27,23 +29,18 @@ final class PlayerContainerViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.background
-        addChild(content)
-        content.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(content.view)
-        content.didMove(toParent: self)
+        let appearance = UITabBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = Theme.background
+        tabBar.standardAppearance = appearance
+        tabBar.scrollEdgeAppearance = appearance
         miniPlayer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(miniPlayer)
-        let bottom = miniPlayer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
-        miniPlayerBottom = bottom
         NSLayoutConstraint.activate([
-            content.view.topAnchor.constraint(equalTo: view.topAnchor),
-            content.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            content.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             miniPlayer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             miniPlayer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             miniPlayer.heightAnchor.constraint(equalToConstant: MiniPlayerView.height),
-            bottom,
+            miniPlayer.bottomAnchor.constraint(equalTo: tabBar.topAnchor),
         ])
         miniPlayer.onTap = { [weak self] in self?.openPlayer() }
         miniPlayer.onPlayPause = { [weak self] in self?.player.togglePlayPause() }
@@ -60,11 +57,22 @@ final class PlayerContainerViewController: UIViewController {
         stateChanged()
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        view.bringSubviewToFront(miniPlayer)
+    }
+
+    func setMessagesBadge(_ count: Int) {
+        viewControllers?[1].tabBarItem.badgeValue = count > 0 ? String(count) : nil
+    }
+
     private func stateChanged() {
         let visible = player.current != nil
         miniPlayer.update(track: player.current, state: player.state)
         miniPlayer.isHidden = !visible
-        content.additionalSafeAreaInsets.bottom = visible ? MiniPlayerView.height : 0
+        for child in viewControllers ?? [] {
+            child.additionalSafeAreaInsets.bottom = visible ? MiniPlayerView.height : 0
+        }
     }
 
     private func openPlayer() {
@@ -77,6 +85,11 @@ final class PlayerContainerViewController: UIViewController {
         }
         controller.membership = membership
         controller.onToggleLibrary = onToggleLibrary
+        controller.onShare = { [weak self] track in
+            self?.dismiss(animated: true) {
+                self?.onShareTrack?(track)
+            }
+        }
         present(controller, animated: true)
     }
 }

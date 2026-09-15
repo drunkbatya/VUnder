@@ -13,7 +13,11 @@ final class AppCoordinator {
     private let exporter: TrackExporter
     private let downloads: DownloadCenter
     private let updater: OTAUpdater
+    private let voicePlayer = VoicePlayer()
     private var autoCache: AutoCacheController?
+    private var messaging: MessagingContext?
+    private weak var tabs: MainTabBarController?
+    private weak var messagesNavigation: UINavigationController?
     private var loginCoordinator: LoginCoordinator?
     private weak var musicNavigation: UINavigationController?
     private weak var musicRoot: MusicRootViewController?
@@ -35,6 +39,11 @@ final class AppCoordinator {
         exporter = TrackExporter()
         downloads = DownloadCenter(cache: environment.cache, exporter: exporter)
         updater = OTAUpdater(feedURL: ReleaseFeed.url)
+        voicePlayer.pauseMusic = { [player] in
+            if player.isPlaying {
+                player.pause()
+            }
+        }
     }
 
     func start() {
@@ -49,6 +58,10 @@ final class AppCoordinator {
         observers.append(NotificationCenter.default.addObserver(forName: SessionStore.sessionDidChange, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             MainActor.assumeIsolated { self.sessionDidChange() }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: MessageStore.didChange, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            MainActor.assumeIsolated { self.updateMessagesBadge() }
         })
         observers.append(NotificationCenter.default.addObserver(forName: DownloadCenter.jobDidFinish, object: downloads, queue: .main) { [weak self] notification in
             guard let self, let job = notification.userInfo?["job"] as? DownloadCenter.Job else { return }
@@ -120,12 +133,6 @@ final class AppCoordinator {
             guard let self, let navigation else { return }
             navigation.pushViewController(DownloadsViewController(center: downloads), animated: true)
         }
-        root.onSettings = { [weak self, weak navigation] in
-            guard let self, let navigation else { return }
-            let settings = SettingsViewController(settings: environment.settings, cache: environment.cache, updater: updater)
-            settings.onSignOut = { [weak self] in self?.signOut() }
-            navigation.pushViewController(settings, animated: true)
-        }
         general.onSelectRow = { [weak self, weak navigation] row in
             guard let self, let navigation else { return }
             navigation.pushViewController(makeGeneralScreen(row, userID: session.userID, navigation: navigation), animated: true)
@@ -133,20 +140,164 @@ final class AppCoordinator {
         musicNavigation = navigation
         musicRoot = root
         self.myMusic = myMusic
-        let container = PlayerContainerViewController(content: navigation, player: player, fileInfoProvider: fileInfoProvider)
-        container.onJumpToTrack = { [weak self] track, source in
+        let messaging = startMessaging(userID: session.userID)
+        let messagesNavigation = UINavigationController(rootViewController: makeConversations(messaging))
+        self.messagesNavigation = messagesNavigation
+        let settings = SettingsViewController(settings: environment.settings, cache: environment.cache, updater: updater)
+        settings.onSignOut = { [weak self] in self?.signOut() }
+        let tabs = MainTabBarController(music: navigation, messages: messagesNavigation, settings: UINavigationController(rootViewController: settings), player: player, fileInfoProvider: fileInfoProvider)
+        tabs.onJumpToTrack = { [weak self] track, source in
             self?.jump(to: track, source: source)
         }
-        container.membership = { [editor] track in editor.membership(of: track) }
-        container.onToggleLibrary = { [weak self] track, mine, screen in
+        tabs.membership = { [editor] track in editor.membership(of: track) }
+        tabs.onToggleLibrary = { [weak self] track, mine, screen in
             self?.editLibrary(track, delete: mine, notice: screen.showNotice, failure: screen.showError)
         }
-        window.rootViewController = container
+        tabs.onShareTrack = { [weak self] track in
+            self?.shareTrack(track)
+        }
+        self.tabs = tabs
+        window.rootViewController = tabs
+        updateMessagesBadge()
+    }
+
+    private func startMessaging(userID: Int64) -> MessagingContext {
+        let presence = OfflinePresence(api: environment.messagesAPI)
+        let outbox = Outbox(api: environment.messagesAPI, store: environment.messageStore, network: environment.network, presence: presence, userID: userID)
+        let sync = MessagesSync(api: environment.messagesAPI, store: environment.messageStore, network: environment.network, settings: environment.settings)
+        let context = MessagingContext(userID: userID, outbox: outbox, sync: sync)
+        messaging = context
+        sync.start()
+        outbox.flush()
+        return context
+    }
+
+    private func updateMessagesBadge() {
+        Task { [weak self, store = environment.messageStore] in
+            let unread = (try? await store.unreadTotal()) ?? 0
+            self?.tabs?.setMessagesBadge(unread)
+        }
+    }
+
+    private func makeConversations(_ messaging: MessagingContext) -> ConversationsViewController {
+        let conversations = ConversationsViewController(api: environment.messagesAPI, store: environment.messageStore, sync: messaging.sync, network: environment.network)
+        conversations.onSelect = { [weak self] conversation in
+            self?.openChat(peerID: conversation.peerID, title: conversation.title)
+        }
+        conversations.onCompose = { [weak self] in
+            guard let self, let navigation = messagesNavigation else { return }
+            let friends = FriendsViewController(api: environment.messagesAPI, network: environment.network)
+            friends.onSelect = { [weak self, weak navigation] profile in
+                guard let self, let navigation, let chat = makeChat(peerID: profile.id, title: profile.name) else { return }
+                var stack = navigation.viewControllers
+                stack.removeLast()
+                stack.append(chat)
+                navigation.setViewControllers(stack, animated: true)
+            }
+            navigation.pushViewController(friends, animated: true)
+        }
+        return conversations
+    }
+
+    @discardableResult
+    private func openChat(peerID: Int64, title: String) -> ChatViewController? {
+        guard let navigation = messagesNavigation else { return nil }
+        if let top = navigation.topViewController as? ChatViewController, top.peerID == peerID {
+            return top
+        }
+        guard let chat = makeChat(peerID: peerID, title: title) else { return nil }
+        navigation.pushViewController(chat, animated: true)
+        return chat
+    }
+
+    private func shareTrack(_ track: Track) {
+        guard let navigation = messagesNavigation else { return }
+        Log.app.info("share \(track.storageID, privacy: .public) from player")
+        tabs?.selectedIndex = 1
+        navigation.presentedViewController?.dismiss(animated: false)
+        let picker = ConversationPickerViewController(store: environment.messageStore, api: environment.messagesAPI, network: environment.network)
+        picker.onPick = { [weak self, weak picker] peerID, title in
+            picker?.dismiss(animated: true) {
+                self?.openChat(peerID: peerID, title: title)?.attach([track])
+            }
+        }
+        navigation.present(UINavigationController(rootViewController: picker), animated: true)
+    }
+
+    private func makeChat(peerID: Int64, title: String) -> ChatViewController? {
+        guard let messaging else { return nil }
+        let chat = ChatViewController(
+            peerID: peerID,
+            title: title,
+            userID: messaging.userID,
+            api: environment.messagesAPI,
+            store: environment.messageStore,
+            outbox: messaging.outbox,
+            network: environment.network,
+            settings: environment.settings,
+            player: player,
+            voicePlayer: voicePlayer
+        )
+        chat.onPlayTrack = { [weak self] track, tracks in
+            self?.player.play(track, in: tracks, source: .conversation(peerID: peerID, title: title))
+        }
+        chat.trackMenu = { [weak self] track, chat in
+            self?.chatTrackMenu(track, chat: chat)
+        }
+        chat.onAttach = { [weak self] chat in
+            guard let self else { return }
+            let picker = TrackPickerViewController(library: environment.library, limit: ChatInputBar.maxAttachments - chat.attachedCount)
+            picker.onPick = { [weak chat, weak picker] tracks in
+                chat?.attach(tracks)
+                picker?.dismiss(animated: true)
+            }
+            chat.present(UINavigationController(rootViewController: picker), animated: true)
+        }
+        return chat
+    }
+
+    private func chatTrackMenu(_ track: Track, chat: ChatViewController) -> UIMenu? {
+        var actions: [UIAction] = [
+            UIAction(title: "Play next", image: UIImage(systemName: "text.insert")) { [player] _ in player.playNext(track) },
+            UIAction(title: "Add to queue", image: UIImage(systemName: "text.append")) { [player] _ in player.addToQueue(track) },
+        ]
+        if track.isAvailable, libraryEditor?.membership(of: track) != .mine {
+            actions.append(UIAction(title: "Add to my music", image: UIImage(systemName: "plus.circle")) { [weak self, weak chat] _ in
+                guard let self, let chat else { return }
+                editLibrary(track, delete: false, notice: chat.showNotice, failure: chat.showError)
+            })
+        }
+        if track.isAvailable {
+            actions.append(UIAction(title: "Save offline", image: UIImage(systemName: "arrow.down.circle")) { [downloads] _ in
+                downloads.enqueue(track, kind: .cache)
+            })
+        }
+        return UIMenu(children: actions)
+    }
+
+    private func sendTrack(_ track: Track, from list: TrackListViewController) {
+        let picker = ConversationPickerViewController(store: environment.messageStore, api: environment.messagesAPI, network: environment.network)
+        picker.onPick = { [weak self, weak picker, weak list] peerID, title in
+            guard let self else { return }
+            messaging?.outbox.enqueue(peerID: peerID, text: "", attachments: [track])
+            picker?.dismiss(animated: true) {
+                list?.showNotice(self.environment.network.isConnected ? "Sent to \(title)" : "Will send to \(title) when online")
+            }
+        }
+        list.present(UINavigationController(rootViewController: picker), animated: true)
     }
 
     private func jump(to track: Track, source: QueueSource) {
         guard let navigation = musicNavigation, let root = musicRoot, let myMusic else { return }
         Log.app.info("jump to \(track.storageID, privacy: .public) in \(source.title, privacy: .public)")
+        if case .conversation(let peerID, let title) = source {
+            tabs?.selectedIndex = 1
+            messagesNavigation?.presentedViewController?.dismiss(animated: false)
+            openChat(peerID: peerID, title: title)
+            (messagesNavigation?.topViewController as? ChatViewController)?.reveal(track)
+            return
+        }
+        tabs?.selectedIndex = 0
         navigation.presentedViewController?.dismiss(animated: false)
         navigation.popToRootViewController(animated: false)
         switch source {
@@ -156,7 +307,7 @@ final class AppCoordinator {
         case .search(let query):
             root.select(0)
             myMusic.revealInSearch(query: query, track: track)
-        case .saved, .listened, .playlist, .recommendations, .similar:
+        case .saved, .listened, .playlist, .recommendations, .similar, .conversation:
             root.select(1)
             let screen: TrackListViewController
             switch source {
@@ -197,14 +348,18 @@ final class AppCoordinator {
     private func signOut() {
         Log.app.info("sign out")
         player.stop()
+        voicePlayer.stop()
+        messaging?.sync.stop()
+        messaging = nil
         autoCache = nil
         recommendations = nil
         libraryEditor = nil
         downloads.cancelAll()
         downloads.clearFinished()
-        Task { [library = environment.library, cache = environment.cache] in
+        Task { [library = environment.library, cache = environment.cache, messages = environment.messageStore] in
             await cache.clear()
             try? await library.clear()
+            try? await messages.clear()
         }
         environment.sessionStore.clear()
     }
@@ -239,6 +394,9 @@ final class AppCoordinator {
             guard let self else { return }
             downloads.enqueue(track, kind: .saveTo)
             showDownloads(from: list)
+        }
+        list.onSend = { [weak self] track, list in
+            self?.sendTrack(track, from: list)
         }
         list.onToggleCache = { [cacheState, downloads, cache = environment.cache] track in
             let cached = cacheState.isCached(track)
@@ -309,4 +467,10 @@ final class AppCoordinator {
             return playlists
         }
     }
+}
+
+struct MessagingContext {
+    let userID: Int64
+    let outbox: Outbox
+    let sync: MessagesSync
 }

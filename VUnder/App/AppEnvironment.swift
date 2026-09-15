@@ -13,6 +13,8 @@ final class AppEnvironment {
     let library: TrackLibrary
     let audioAPI: AudioAPI
     let cache: AudioCache
+    let messagesAPI: MessagesAPI
+    let messageStore: MessageStore
 
     init() {
         sessionStore = SessionStore(service: Bundle.main.bundleIdentifier ?? "VUnder")
@@ -33,6 +35,8 @@ final class AppEnvironment {
         }
         library = TrackLibrary(database: database)
         audioAPI = AudioAPI(api: api, settings: settings)
+        messagesAPI = MessagesAPI(api: api)
+        messageStore = MessageStore(database: database)
         do {
             cache = try AudioCache(library: library)
         } catch {

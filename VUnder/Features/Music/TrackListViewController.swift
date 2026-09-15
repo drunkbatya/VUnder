@@ -41,6 +41,7 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
     var membership: ((Track) -> LibraryMembership)?
     var onAddToLibrary: ((Track, TrackListViewController) -> Void)?
     var onDeleteFromLibrary: ((Track, TrackListViewController) -> Void)?
+    var onSend: ((Track, TrackListViewController) -> Void)?
     private var pendingReveal: Track?
     private var observers: [NSObjectProtocol] = []
 
@@ -227,6 +228,12 @@ class TrackListViewController: UIViewController, UITableViewDataSource, UITableV
                 actions.append(UIAction(title: "Save to...", image: UIImage(systemName: "square.and.arrow.down")) { [weak self] _ in
                     guard let self else { return }
                     onSaveTo(track, self)
+                })
+            }
+            if track.isAvailable, let self, let onSend = onSend {
+                actions.append(UIAction(title: "Send to...", image: UIImage(systemName: "paperplane")) { [weak self] _ in
+                    guard let self else { return }
+                    onSend(track, self)
                 })
             }
             if let self, let membership = membership {

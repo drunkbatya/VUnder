@@ -47,6 +47,56 @@ final class AppDatabase: Sendable {
             }
             try db.create(index: "listenHistory_listenedAt", on: "listenHistory", columns: ["listenedAt"])
         }
+        migrator.registerMigration("v3_messages") { db in
+            try db.create(table: "profile") { table in
+                table.column("id", .integer).primaryKey()
+                table.column("name", .text).notNull()
+                table.column("photoURL", .text)
+            }
+            try db.create(table: "conversation") { table in
+                table.column("peerID", .integer).primaryKey()
+                table.column("title", .text).notNull()
+                table.column("photoURL", .text)
+                table.column("unreadCount", .integer).notNull()
+                table.column("inRead", .integer).notNull()
+                table.column("outRead", .integer).notNull()
+                table.column("canWrite", .boolean).notNull()
+                table.column("lastMessage", .text)
+                table.column("sortDate", .datetime).notNull()
+            }
+            try db.create(table: "message") { table in
+                table.column("id", .integer).primaryKey()
+                table.column("peerID", .integer).notNull()
+                table.column("fromID", .integer).notNull()
+                table.column("date", .datetime).notNull()
+                table.column("text", .text).notNull()
+                table.column("out", .boolean).notNull()
+                table.column("attachments", .text).notNull()
+                table.column("randomID", .integer).notNull()
+            }
+            try db.create(index: "message_peerID", on: "message", columns: ["peerID", "id"])
+            try db.create(table: "outgoingMessage") { table in
+                table.autoIncrementedPrimaryKey("id")
+                table.column("peerID", .integer).notNull()
+                table.column("text", .text).notNull()
+                table.column("track", .text)
+                table.column("randomID", .integer).notNull()
+                table.column("createdAt", .datetime).notNull()
+                table.column("failure", .text)
+            }
+        }
+        migrator.registerMigration("v4_outgoing_attachments") { db in
+            try db.drop(table: "outgoingMessage")
+            try db.create(table: "outgoingMessage") { table in
+                table.autoIncrementedPrimaryKey("id")
+                table.column("peerID", .integer).notNull()
+                table.column("text", .text).notNull()
+                table.column("attachments", .text).notNull()
+                table.column("randomID", .integer).notNull()
+                table.column("createdAt", .datetime).notNull()
+                table.column("failure", .text)
+            }
+        }
         return migrator
     }
 }
