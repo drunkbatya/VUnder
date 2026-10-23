@@ -10,11 +10,19 @@ def git(*arguments):
     return subprocess.run(["git", *arguments], check=True, capture_output=True, text=True).stdout.strip()
 
 
+def version_key(tag):
+    return tuple(int(part) if part.isdigit() else -1 for part in tag.split("."))
+
+
 def git_version():
-    try:
-        version = git("describe", "--tags", "--abbrev=0", "--match", "[0-9]*")
-    except subprocess.CalledProcessError:
-        version = "0.0.0"
+    head_tags = git("tag", "--points-at", "HEAD", "--list", "[0-9]*").split()
+    if head_tags:
+        version = max(head_tags, key=version_key)
+    else:
+        try:
+            version = git("describe", "--tags", "--abbrev=0", "--match", "[0-9]*")
+        except subprocess.CalledProcessError:
+            version = "0.0.0"
     return version, git("rev-list", "--count", "HEAD")
 
 
