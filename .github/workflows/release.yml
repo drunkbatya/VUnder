@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: drunkbatya/ios-ota-updater
-          ref: 1.1.0
+          ref: 1.2.0
           path: ota
 
       - name: Version from tag
@@ -78,7 +78,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             "build/ota/$SCHEME-${{ steps.version.outputs.version }}.ipa" \
-            build/ota/manifest.plist \
+            "build/ota/manifest-${{ steps.version.outputs.version }}.plist" \
             build/ota/update.json \
             --title "$GITHUB_REF_NAME" \
             --notes-file build/notes.md
